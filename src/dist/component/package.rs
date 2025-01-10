@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::{self, ErrorKind as IOErrorKind, Read};
 use std::mem;
-use std::path::{Path, PathBuf};
+use std::path::{self, Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tar::EntryType;
@@ -103,7 +103,16 @@ impl Package for DirectoryPackage {
             let part = ComponentPart::decode(l)
                 .ok_or_else(|| RustupError::CorruptComponent(name.to_owned()))?;
 
-            let path = part.1;
+            let mut path = part.1;
+            let manifest_sep = "/";
+            if path::MAIN_SEPARATOR_STR != manifest_sep {
+                // Lossy conversion is safe here because we assume that `path` comes from
+                // `ComponentPart::decode()`, i.e. from calling `Path::from()` on a `&str`.
+                path = path
+                    .to_string_lossy()
+                    .replace(manifest_sep, path::MAIN_SEPARATOR_STR)
+                    .into();
+            }
             let src_path = root.join(&path);
 
             match &*part.0 {
