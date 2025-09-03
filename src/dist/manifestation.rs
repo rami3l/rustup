@@ -278,6 +278,11 @@ impl Manifestation {
                             new_manifest,
                             current_tx,
                         )?;
+                        (download_cfg.notify_handler)(Notification::ComponentInstalled(
+                            &component.short_name(new_manifest),
+                            &self.target_triple,
+                            Some(&self.target_triple),
+                        ));
                         current_tx = new_tx;
                         counter += 1;
                     }
