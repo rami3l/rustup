@@ -105,11 +105,11 @@ impl Manifestation {
     /// It is *not* safe to run two updates concurrently. See
     /// https://github.com/rust-lang/rustup/issues/988 for the details.
     pub async fn update(
-        &self,
-        new_manifest: &Manifest,
+        self: Arc<Self>,
+        new_manifest: Arc<Manifest>,
         changes: Changes,
         force_update: bool,
-        download_cfg: &DownloadCfg<'_>,
+        download_cfg: Arc<DownloadCfg<'_>>,
         toolchain_str: &str,
         implicit_modify: bool,
     ) -> Result<UpdateStatus> {
@@ -122,8 +122,8 @@ impl Manifestation {
         // Create the lists of components needed for installation
         let config = self.read_config()?;
         let mut update = Update::build_update(
-            self,
-            new_manifest,
+            &*self,
+            &*new_manifest,
             &changes,
             &config,
             &download_cfg.notify_handler,
@@ -134,7 +134,7 @@ impl Manifestation {
         }
 
         // Validate that the requested components are available
-        if let Err(e) = update.unavailable_components(new_manifest, toolchain_str) {
+        if let Err(e) = update.unavailable_components(&*new_manifest, toolchain_str) {
             if !force_update {
                 return Err(e);
             }
@@ -143,7 +143,7 @@ impl Manifestation {
             {
                 for component in &components {
                     (download_cfg.notify_handler)(Notification::ForcingUnavailableComponent(
-                        &component.name(new_manifest),
+                        &component.name(&*new_manifest),
                     ));
                 }
                 update.drop_components_to_install(&components);
@@ -154,7 +154,7 @@ impl Manifestation {
 
         // Download component packages and validate hashes
         let mut things_downloaded: Vec<String> = Vec::new();
-        let components = update.components_urls_and_hashes(new_manifest)?;
+        let components = update.components_urls_and_hashes(&*new_manifest)?;
         let components_len = components.len();
 
         const DEFAULT_CONCURRENT_DOWNLOADS: usize = 2;
@@ -186,7 +186,7 @@ impl Manifestation {
         info!("downloading component(s)");
         for (component, _, url, _) in components.clone() {
             (download_cfg.notify_handler)(Notification::DownloadingComponent(
-                &component.short_name(new_manifest),
+                &component.short_name(&*new_manifest),
                 &self.target_triple,
                 component.target.as_ref(),
                 &url,
@@ -201,14 +201,14 @@ impl Manifestation {
                 Notification::RemovingComponent
             };
             (download_cfg.notify_handler)(notification(
-                &component.short_name(new_manifest),
+                &component.short_name(&*new_manifest),
                 &self.target_triple,
                 component.target.as_ref(),
             ));
 
             tx = self.uninstall_component(
                 component,
-                new_manifest,
+                &*new_manifest,
                 tx,
                 &download_cfg.notify_handler,
                 download_cfg.process,
@@ -226,24 +226,32 @@ impl Manifestation {
             let semaphore = Arc::new(Semaphore::new(concurrent_downloads));
             let component_stream = tokio_stream::iter(components.into_iter()).map({
                 let download_tx = download_tx.clone();
-                move |(component, format, url, hash)| {
-                    let sem = semaphore.clone();
-                    let download_tx = download_tx.clone();
-                    async move {
-                        let _permit = sem.acquire().await.unwrap();
-                        self.download_component(
-                            component,
-                            format,
-                            url,
-                            hash,
-                            altered,
-                            tmp_cx,
-                            download_cfg,
-                            max_retries,
-                            new_manifest,
-                            download_tx,
-                        )
-                        .await
+                {
+                    let this = Arc::clone(&self);
+                    let download_cfg = Arc::clone(&download_cfg);
+                    let new_manifest = Arc::clone(&new_manifest);
+                    move |(component, format, url, hash)| {
+                        let sem = semaphore.clone();
+                        let download_tx = download_tx.clone();
+                        let this = Arc::clone(&this);
+                        let download_cfg = Arc::clone(&download_cfg);
+                        let new_manifest = Arc::clone(&new_manifest);
+                        async move {
+                            let _permit = sem.acquire().await.unwrap();
+                            this.download_component(
+                                component,
+                                format,
+                                url,
+                                hash,
+                                altered,
+                                tmp_cx,
+                                &*download_cfg,
+                                max_retries,
+                                &*new_manifest,
+                                download_tx,
+                            )
+                            .await
+                        }
                     }
                 }
             });
@@ -263,31 +271,36 @@ impl Manifestation {
                 }
                 hashes
             };
-            let install_handle = tokio::spawn(async {
-                let mut current_tx = tx;
-                let mut counter = 0;
-                while counter < total_components
-                    && let Some(message) = download_rx.recv().await
-                {
-                    let (component, format, installer_file) = message?;
-                    let new_tx = self.install_component(
-                        component.clone(),
-                        format,
-                        installer_file,
-                        tmp_cx,
-                        download_cfg,
-                        new_manifest,
-                        current_tx,
-                    )?;
-                    (download_cfg.notify_handler)(Notification::ComponentInstalled(
-                        &component.short_name(new_manifest),
-                        &self.target_triple,
-                        Some(&self.target_triple),
-                    ));
-                    current_tx = new_tx;
-                    counter += 1;
+            let install_handle = tokio::spawn({
+                let this = Arc::clone(&self);
+                let download_cfg = Arc::clone(&download_cfg);
+                let new_manifest = Arc::clone(&new_manifest);
+                async move {
+                    let mut current_tx = tx;
+                    let mut counter = 0;
+                    while counter < total_components
+                        && let Some(message) = download_rx.recv().await
+                    {
+                        let (component, format, installer_file) = message?;
+                        let new_tx = this.install_component(
+                            component.clone(),
+                            format,
+                            installer_file,
+                            tmp_cx,
+                            &*download_cfg,
+                            &*new_manifest,
+                            current_tx,
+                        )?;
+                        (download_cfg.notify_handler)(Notification::ComponentInstalled(
+                            &component.short_name(&*new_manifest),
+                            &self.target_triple,
+                            Some(&self.target_triple),
+                        ));
+                        current_tx = new_tx;
+                        counter += 1;
+                    }
+                    Ok::<_, Error>(current_tx)
                 }
-                Ok::<_, Error>(current_tx)
             });
 
             let (download_results, install_result) = tokio::join!(download_handle, install_handle);
@@ -296,7 +309,7 @@ impl Manifestation {
         }
 
         // Install new distribution manifest
-        let new_manifest_str = new_manifest.clone().stringify()?;
+        let new_manifest_str = (&*new_manifest).clone().stringify()?;
         tx.modify_file(rel_installed_manifest_path)?;
         utils::write_file("manifest", &installed_manifest_path, &new_manifest_str)?;
 
