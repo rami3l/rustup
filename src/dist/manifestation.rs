@@ -248,8 +248,8 @@ impl Manifestation {
                 }
             });
 
-            let download_handle = tokio::spawn(async move {
-                let mut stream = component_stream.buffered(components_len);
+            let mut stream = component_stream.buffered(components_len);
+            let download_handle = async move {
                 let mut hashes = Vec::new();
                 while let Some(result) = stream.next().await {
                     match result {
@@ -262,7 +262,7 @@ impl Manifestation {
                     }
                 }
                 hashes
-            });
+            };
             let install_handle = async {
                 let mut current_tx = tx;
                 let mut counter = 0;
@@ -291,7 +291,7 @@ impl Manifestation {
             };
 
             let (download_results, install_result) = tokio::join!(download_handle, install_handle);
-            things_downloaded = download_results?;
+            things_downloaded = download_results;
             tx = install_result?;
         }
 
