@@ -8,7 +8,7 @@ use crate::{
     utils::notify::NotificationLevel,
 };
 
-pub type NotifyHandler = dyn for<'a> Fn(Notification<'a>) + Sync + Send;
+pub(crate) type NotifyHandler = dyn for<'a> Fn(Notification<'a>) + Sync + Send;
 
 #[derive(Debug)]
 pub(crate) enum Notification<'a> {
