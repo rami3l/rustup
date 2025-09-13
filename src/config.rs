@@ -233,7 +233,7 @@ pub(crate) struct Cfg<'a> {
     pub toolchain_override: Option<ResolvableToolchainName>,
     pub env_override: Option<LocalToolchainName>,
     pub dist_root_url: String,
-    pub notify_handler: Arc<dyn Fn(Notification<'_>)>,
+    pub notify_handler: Arc<NotifyHandler>,
     pub current_dir: PathBuf,
     pub process: &'a Process,
 }
