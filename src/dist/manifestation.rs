@@ -224,10 +224,11 @@ impl Manifestation {
                 mpsc::channel::<Result<(Component, CompressionKind, File)>>(total_components);
 
             let semaphore = Arc::new(Semaphore::new(concurrent_downloads));
-            let component_stream =
-                tokio_stream::iter(components.into_iter()).map(|(component, format, url, hash)| {
+            let component_stream = tokio_stream::iter(components.into_iter()).map({
+                let download_tx = download_tx.clone();
+                move |(component, format, url, hash)| {
                     let sem = semaphore.clone();
-                    let download_tx_cloned = download_tx.clone();
+                    let download_tx = download_tx.clone();
                     async move {
                         let _permit = sem.acquire().await.unwrap();
                         self.download_component(
@@ -240,14 +241,15 @@ impl Manifestation {
                             download_cfg,
                             max_retries,
                             new_manifest,
-                            download_tx_cloned,
+                            download_tx,
                         )
                         .await
                     }
-                });
+                }
+            });
 
-            let mut stream = component_stream.buffered(components_len);
-            let download_handle = tokio::spawn(async {
+            let download_handle = tokio::spawn(async move {
+                let mut stream = component_stream.buffered(components_len);
                 let mut hashes = Vec::new();
                 while let Some(result) = stream.next().await {
                     match result {

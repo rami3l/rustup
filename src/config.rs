@@ -328,7 +328,10 @@ impl<'a> Cfg<'a> {
     }
 
     /// construct a download configuration
-    pub(crate) fn download_cfg(&'a self, notify_handler: &'a NotifyHandler) -> DownloadCfg<'a> {
+    pub(crate) fn download_cfg(
+        &'a self,
+        notify_handler: &'a dist::notifications::NotifyHandler,
+    ) -> DownloadCfg<'a> {
         DownloadCfg {
             dist_root: &self.dist_root_url,
             tmp_cx: &self.tmp_cx,
