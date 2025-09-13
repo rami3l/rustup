@@ -10,7 +10,7 @@ use thiserror::Error as ThisError;
 use tokio_stream::StreamExt;
 use tracing::trace;
 
-use crate::dist::AutoInstallMode;
+use crate::dist::{AutoInstallMode, notifications::NotifyHandler};
 use crate::{
     cli::{common, self_update::SelfUpdateMode},
     dist::{
@@ -241,7 +241,7 @@ pub(crate) struct Cfg<'a> {
 impl<'a> Cfg<'a> {
     pub(crate) fn from_env(
         current_dir: PathBuf,
-        notify_handler: Arc<dyn Fn(Notification<'_>)>,
+        notify_handler: Arc<NotifyHandler>,
         process: &'a Process,
     ) -> Result<Self> {
         // Set up the rustup home directory
@@ -328,10 +328,7 @@ impl<'a> Cfg<'a> {
     }
 
     /// construct a download configuration
-    pub(crate) fn download_cfg(
-        &'a self,
-        notify_handler: &'a dyn Fn(crate::dist::Notification<'_>),
-    ) -> DownloadCfg<'a> {
+    pub(crate) fn download_cfg(&'a self, notify_handler: &'a NotifyHandler) -> DownloadCfg<'a> {
         DownloadCfg {
             dist_root: &self.dist_root_url,
             tmp_cx: &self.tmp_cx,

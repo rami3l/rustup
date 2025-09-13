@@ -68,6 +68,8 @@ impl Drop for File<'_> {
     }
 }
 
+pub type NotifyHandler = dyn Fn(Notification<'_>) + Sync;
+
 #[derive(Debug)]
 pub enum Notification<'a> {
     CreatingRoot(&'a Path),
@@ -121,14 +123,14 @@ impl Display for Notification<'_> {
 pub struct Context {
     root_directory: PathBuf,
     pub dist_server: String,
-    notify_handler: Box<dyn Fn(Notification<'_>)>,
+    notify_handler: Box<NotifyHandler>,
 }
 
 impl Context {
     pub fn new(
         root_directory: PathBuf,
         dist_server: &str,
-        notify_handler: Box<dyn Fn(Notification<'_>)>,
+        notify_handler: Box<NotifyHandler>,
     ) -> Self {
         Self {
             root_directory,

@@ -247,51 +247,49 @@ impl Manifestation {
                 });
 
             let mut stream = component_stream.buffered(components_len);
-            let (download_results, install_result) = join(
-                async {
-                    let mut hashes = Vec::new();
-                    while let Some(result) = stream.next().await {
-                        match result {
-                            Ok(hash) => {
-                                hashes.push(hash);
-                            }
-                            Err(e) => {
-                                let _ = download_tx.send(Err(e)).await;
-                            }
+            let download_handle = tokio::spawn(async {
+                let mut hashes = Vec::new();
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(hash) => {
+                            hashes.push(hash);
+                        }
+                        Err(e) => {
+                            let _ = download_tx.send(Err(e)).await;
                         }
                     }
-                    hashes
-                },
-                async {
-                    let mut current_tx = tx;
-                    let mut counter = 0;
-                    while counter < total_components
-                        && let Some(message) = download_rx.recv().await
-                    {
-                        let (component, format, installer_file) = message?;
-                        let new_tx = self.install_component(
-                            component.clone(),
-                            format,
-                            installer_file,
-                            tmp_cx,
-                            download_cfg,
-                            new_manifest,
-                            current_tx,
-                        )?;
-                        (download_cfg.notify_handler)(Notification::ComponentInstalled(
-                            &component.short_name(new_manifest),
-                            &self.target_triple,
-                            Some(&self.target_triple),
-                        ));
-                        current_tx = new_tx;
-                        counter += 1;
-                    }
-                    Ok::<_, Error>(current_tx)
-                },
-            )
-            .await;
+                }
+                hashes
+            });
+            let install_handle = async {
+                let mut current_tx = tx;
+                let mut counter = 0;
+                while counter < total_components
+                    && let Some(message) = download_rx.recv().await
+                {
+                    let (component, format, installer_file) = message?;
+                    let new_tx = self.install_component(
+                        component.clone(),
+                        format,
+                        installer_file,
+                        tmp_cx,
+                        download_cfg,
+                        new_manifest,
+                        current_tx,
+                    )?;
+                    (download_cfg.notify_handler)(Notification::ComponentInstalled(
+                        &component.short_name(new_manifest),
+                        &self.target_triple,
+                        Some(&self.target_triple),
+                    ));
+                    current_tx = new_tx;
+                    counter += 1;
+                }
+                Ok::<_, Error>(current_tx)
+            };
 
-            things_downloaded = download_results;
+            let (download_results, install_result) = tokio::join!(download_handle, install_handle);
+            things_downloaded = download_results?;
             tx = install_result?;
         }
 
@@ -423,7 +421,7 @@ impl Manifestation {
         new_manifest: &[String],
         update_hash: Option<&Path>,
         tmp_cx: &temp::Context,
-        notify_handler: &dyn Fn(Notification<'_>),
+        notify_handler: &NotifyHandler,
         process: &Process,
     ) -> Result<Option<String>> {
         // If there's already a v2 installation then something has gone wrong
