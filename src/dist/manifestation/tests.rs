@@ -3,12 +3,11 @@
 #![allow(clippy::type_complexity)]
 
 use std::{
-    cell::Cell,
     collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Result, anyhow};
@@ -1490,11 +1489,14 @@ async fn reuse_downloaded_file() {
     let cx = TestContext::new(None, GZOnly);
     prevent_installation(&cx.prefix);
 
-    let reuse_notification_fired = Arc::new(Cell::new(false));
+    let reuse_notification_fired = Arc::new(Mutex::new(false));
     let dl_cfg = DownloadCfg {
-        notify_handler: &|n| {
-            if let Notification::FileAlreadyDownloaded = n {
-                reuse_notification_fired.set(true);
+        notify_handler: &{
+            let reuse_notification_fired = Arc::clone(&reuse_notification_fired);
+            move |n| {
+                if let Notification::FileAlreadyDownloaded = n {
+                    *reuse_notification_fired.lock().unwrap() = true;
+                }
             }
         },
         ..cx.default_dl_cfg()
@@ -1503,14 +1505,14 @@ async fn reuse_downloaded_file() {
     cx.update_from_dist_with_dl_cfg(&[], &[], false, &dl_cfg)
         .await
         .unwrap_err();
-    assert!(!reuse_notification_fired.get());
+    assert!(!*reuse_notification_fired.lock().unwrap());
 
     allow_installation(&cx.prefix);
     cx.update_from_dist_with_dl_cfg(&[], &[], false, &dl_cfg)
         .await
         .unwrap();
 
-    assert!(reuse_notification_fired.get());
+    assert!(*reuse_notification_fired.lock().unwrap());
 }
 
 #[tokio::test]
@@ -1529,11 +1531,14 @@ async fn checks_files_hashes_before_reuse() {
     utils::write_file("bad previous download", &prev_download, "bad content").unwrap();
     println!("wrote previous download to {}", prev_download.display());
 
-    let noticed_bad_checksum = Arc::new(Cell::new(false));
+    let noticed_bad_checksum = Arc::new(Mutex::new(false));
     let dl_cfg = DownloadCfg {
-        notify_handler: &|n| {
-            if let Notification::CachedFileChecksumFailed = n {
-                noticed_bad_checksum.set(true);
+        notify_handler: &{
+            let noticed_bad_checksum = Arc::clone(&noticed_bad_checksum);
+            move |n| {
+                if let Notification::CachedFileChecksumFailed = n {
+                    *noticed_bad_checksum.lock().unwrap() = true;
+                }
             }
         },
         ..cx.default_dl_cfg()
@@ -1543,7 +1548,7 @@ async fn checks_files_hashes_before_reuse() {
         .await
         .unwrap();
 
-    assert!(noticed_bad_checksum.get());
+    assert!(*noticed_bad_checksum.lock().unwrap());
 }
 
 #[tokio::test]
