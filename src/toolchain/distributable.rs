@@ -510,7 +510,7 @@ impl<'a> DistributableToolchain<'a> {
         };
 
         let notify_handler =
-            |n: crate::dist::Notification<'_>| (self.toolchain.cfg.notify_handler)(n.into());
+            &|n: crate::dist::Notification<'_>| (self.toolchain.cfg.notify_handler)(n.into());
         let download_cfg = self.toolchain.cfg.download_cfg(&notify_handler);
 
         manifestation

@@ -68,7 +68,7 @@ impl Drop for File<'_> {
     }
 }
 
-pub type NotifyHandler = dyn for<'a> Fn(Notification<'a>) + Sync + Send + 'static;
+pub type NotifyHandler = dyn for<'a> Fn(Notification<'a>) + Sync + Send;
 
 #[derive(Debug)]
 pub enum Notification<'a> {
