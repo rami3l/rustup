@@ -68,7 +68,7 @@ impl Drop for File<'_> {
     }
 }
 
-pub type NotifyHandler = dyn Fn(Notification<'_>) + Sync + Send + 'static;
+pub type NotifyHandler = dyn for<'a> Fn(Notification<'a>) + Sync + Send + 'static;
 
 #[derive(Debug)]
 pub enum Notification<'a> {
@@ -123,7 +123,7 @@ impl Display for Notification<'_> {
 pub struct Context {
     root_directory: PathBuf,
     pub dist_server: String,
-    notify_handler: Box<NotifyHandler>,
+    notify_handler: Box<dyn Fn(Notification<'_>) + Sync + Send + 'static>,
 }
 
 impl Context {
