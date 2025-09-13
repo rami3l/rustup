@@ -38,7 +38,7 @@ pub struct Transaction<'a> {
     prefix: InstallPrefix,
     changes: Vec<ChangedItem<'a>>,
     tmp_cx: &'a temp::Context,
-    notify_handler: &'a dyn Fn(Notification<'_>),
+    notify_handler: &'a NotifyHandler,
     committed: bool,
     process: &'a Process,
 }
@@ -47,7 +47,7 @@ impl<'a> Transaction<'a> {
     pub fn new(
         prefix: InstallPrefix,
         tmp_cx: &'a temp::Context,
-        notify_handler: &'a dyn Fn(Notification<'_>),
+        notify_handler: &'a NotifyHandler,
         process: &'a Process,
     ) -> Self {
         Transaction {

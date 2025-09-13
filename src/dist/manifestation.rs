@@ -263,7 +263,7 @@ impl Manifestation {
                 }
                 hashes
             };
-            let install_handle = async {
+            let install_handle = tokio::spawn(async {
                 let mut current_tx = tx;
                 let mut counter = 0;
                 while counter < total_components
@@ -288,11 +288,11 @@ impl Manifestation {
                     counter += 1;
                 }
                 Ok::<_, Error>(current_tx)
-            };
+            });
 
             let (download_results, install_result) = tokio::join!(download_handle, install_handle);
             things_downloaded = download_results;
-            tx = install_result?;
+            tx = install_result??;
         }
 
         // Install new distribution manifest
@@ -329,7 +329,7 @@ impl Manifestation {
         &self,
         manifest: &Manifest,
         tmp_cx: &temp::Context,
-        notify_handler: &dyn Fn(Notification<'_>),
+        notify_handler: &NotifyHandler,
         process: &Process,
     ) -> Result<()> {
         let prefix = self.installation.prefix();
