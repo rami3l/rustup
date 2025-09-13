@@ -7,7 +7,7 @@ mod tests;
 use std::path::Path;
 
 use anyhow::{Context, Error, Result, anyhow, bail};
-use futures_util::{future::join, stream::StreamExt};
+use futures_util::stream::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{Semaphore, mpsc};
 use tracing::info;

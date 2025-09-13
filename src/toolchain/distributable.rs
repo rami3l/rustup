@@ -530,7 +530,7 @@ impl<'a> DistributableToolchain<'a> {
     pub async fn show_dist_version(&self) -> anyhow::Result<Option<String>> {
         let update_hash = self.toolchain.cfg.get_hash_file(&self.desc, false)?;
         let notify_handler =
-            &|n: crate::dist::Notification<'_>| (self.toolchain.cfg.notify_handler)(n.into());
+            |n: crate::dist::Notification<'_>| (self.toolchain.cfg.notify_handler)(n.into());
         let download_cfg = self.toolchain.cfg.download_cfg(&notify_handler);
 
         match crate::dist::dl_v2_manifest(download_cfg, Some(&update_hash), &self.desc).await? {
