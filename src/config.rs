@@ -10,7 +10,7 @@ use thiserror::Error as ThisError;
 use tokio_stream::StreamExt;
 use tracing::trace;
 
-use crate::dist::{AutoInstallMode, notifications::NotifyHandler};
+use crate::dist::AutoInstallMode;
 use crate::{
     cli::{common, self_update::SelfUpdateMode},
     dist::{

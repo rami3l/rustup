@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::manifest::Manifest;
 
-pub type NotifyHandler = dyn Fn(Notification<'_>) + Sync;
+pub type NotifyHandler = dyn Fn(Notification<'_>) + Sync + Send;
 
 #[derive(Debug)]
 pub enum Notification<'a> {
