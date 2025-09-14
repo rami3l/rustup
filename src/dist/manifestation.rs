@@ -174,9 +174,9 @@ impl Manifestation {
         // Begin transaction before the downloads, as installations are interleaved with those
         let mut tx = Transaction::new(
             prefix.clone(),
-            tmp_cx,
-            &*download_cfg.notify_handler,
-            download_cfg.process,
+            Arc::new(download_cfg.tmp_cx.clone()),
+            Arc::clone(&download_cfg.notify_handler),
+            Arc::new(download_cfg.process.clone()),
         );
 
         // If the previous installation was from a v1 manifest we need
@@ -235,6 +235,7 @@ impl Manifestation {
                         let download_tx = download_tx.clone();
                         let this = Arc::clone(&this);
                         let new_manifest = Arc::clone(&new_manifest);
+                        let download_cfg = download_cfg.clone();
                         async move {
                             let _permit = sem.acquire().await.unwrap();
                             this.download_component(
@@ -281,6 +282,7 @@ impl Manifestation {
                     {
                         let (component, format, installer_file) = message?;
                         let component_name = component.short_name(&*new_manifest);
+                        let notify_handler = Arc::clone(&download_cfg.notify_handler);
                         let new_tx = tokio::task::spawn_blocking({
                             let this = Arc::clone(&self);
                             let new_manifest = Arc::clone(&new_manifest);
@@ -299,7 +301,7 @@ impl Manifestation {
                             }
                         })
                         .await??;
-                        (download_cfg.notify_handler)(Notification::ComponentInstalled(
+                        (notify_handler)(Notification::ComponentInstalled(
                             &component_name,
                             &self.target_triple,
                             Some(&self.target_triple),

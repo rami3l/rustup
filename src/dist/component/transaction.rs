@@ -9,8 +9,8 @@
 //! FIXME: This uses ensure_dir_exists in some places but rollback
 //! does not remove any dirs created by it.
 
-use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::{fs::File, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -34,21 +34,21 @@ use crate::utils;
 ///
 /// All operations that create files will fail if the destination
 /// already exists.
-pub struct Transaction<'a> {
+pub struct Transaction {
     prefix: InstallPrefix,
-    changes: Vec<ChangedItem<'a>>,
-    tmp_cx: &'a temp::Context,
-    notify_handler: &'a NotifyHandler,
+    changes: Vec<ChangedItem>,
+    tmp_cx: Arc<temp::Context>,
+    notify_handler: Arc<NotifyHandler>,
     committed: bool,
-    process: &'a Process,
+    process: Arc<Process>,
 }
 
 impl<'a> Transaction<'a> {
     pub fn new(
         prefix: InstallPrefix,
-        tmp_cx: &'a temp::Context,
-        notify_handler: &'a NotifyHandler,
-        process: &'a Process,
+        tmp_cx: Arc<temp::Context>,
+        notify_handler: Arc<NotifyHandler>,
+        process: Arc<Process>,
     ) -> Self {
         Transaction {
             prefix,
@@ -221,12 +221,12 @@ impl Drop for Transaction<'_> {
 /// package, or updating a component, distill down into a series of
 /// these primitives.
 #[derive(Debug)]
-enum ChangedItem<'a> {
+enum ChangedItem {
     AddedFile(PathBuf),
     AddedDir(PathBuf),
-    RemovedFile(PathBuf, temp::File<'a>),
-    RemovedDir(PathBuf, temp::Dir<'a>),
-    ModifiedFile(PathBuf, Option<temp::File<'a>>),
+    RemovedFile(PathBuf, Arc<temp::File>),
+    RemovedDir(PathBuf, Arc<temp::Dir>),
+    ModifiedFile(PathBuf, Option<Arc<temp::File>>),
 }
 
 impl<'a> ChangedItem<'a> {
