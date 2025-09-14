@@ -295,7 +295,7 @@ impl<'a> Cfg<'a> {
         let tmp_cx = temp::Context::new(
             rustup_dir.join("tmp"),
             dist_root_server.as_str(),
-            Box::new(move |n| (notify_clone)(n.into())),
+            Arc::new(move |n| (notify_clone)(n.into())),
         );
         let dist_root = dist_root_server + "/dist";
 
@@ -330,7 +330,7 @@ impl<'a> Cfg<'a> {
     /// construct a download configuration
     pub(crate) fn download_cfg(
         &'a self,
-        notify_handler: &'a dist::notifications::NotifyHandler,
+        notify_handler: Arc<dist::notifications::NotifyHandler>,
     ) -> DownloadCfg<'a> {
         DownloadCfg {
             dist_root: &self.dist_root_url,

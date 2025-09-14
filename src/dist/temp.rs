@@ -1,8 +1,11 @@
-use std::fmt::{self, Display};
 use std::fs;
 use std::io;
 use std::ops;
 use std::path::{Path, PathBuf};
+use std::{
+    fmt::{self, Display},
+    sync::Arc,
+};
 
 pub(crate) use anyhow::{Context as _, Result};
 use thiserror::Error as ThisError;
@@ -124,14 +127,14 @@ impl Display for Notification<'_> {
 pub struct Context {
     root_directory: PathBuf,
     pub dist_server: String,
-    notify_handler: Box<NotifyHandler>,
+    notify_handler: Arc<NotifyHandler>,
 }
 
 impl Context {
     pub fn new(
         root_directory: PathBuf,
         dist_server: &str,
-        notify_handler: Box<NotifyHandler>,
+        notify_handler: Arc<NotifyHandler>,
     ) -> Self {
         Self {
             root_directory,

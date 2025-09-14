@@ -12,6 +12,9 @@ use std::sync::Arc;
 use tokio::sync::{Semaphore, mpsc};
 use tracing::info;
 
+use crate::dist::component::{
+    Components, Package, TarGzPackage, TarXzPackage, TarZStdPackage, Transaction,
+};
 use crate::dist::config::Config;
 use crate::dist::download::{DownloadCfg, File};
 use crate::dist::manifest::{Component, CompressionKind, Manifest, TargetedPackage};
@@ -19,10 +22,6 @@ use crate::dist::notifications::*;
 use crate::dist::prefix::InstallPrefix;
 use crate::dist::temp;
 use crate::dist::{DEFAULT_DIST_SERVER, Profile, TargetTriple};
-use crate::dist::{
-    component::{Components, Package, TarGzPackage, TarXzPackage, TarZStdPackage, Transaction},
-    download::OwnedDownloadCfg,
-};
 use crate::errors::RustupError;
 use crate::process::Process;
 use crate::utils;
