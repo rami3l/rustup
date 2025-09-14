@@ -12,9 +12,6 @@ use std::sync::Arc;
 use tokio::sync::{Semaphore, mpsc};
 use tracing::info;
 
-use crate::dist::component::{
-    Components, Package, TarGzPackage, TarXzPackage, TarZStdPackage, Transaction,
-};
 use crate::dist::config::Config;
 use crate::dist::download::{DownloadCfg, File};
 use crate::dist::manifest::{Component, CompressionKind, Manifest, TargetedPackage};
@@ -22,6 +19,10 @@ use crate::dist::notifications::*;
 use crate::dist::prefix::InstallPrefix;
 use crate::dist::temp;
 use crate::dist::{DEFAULT_DIST_SERVER, Profile, TargetTriple};
+use crate::dist::{
+    component::{Components, Package, TarGzPackage, TarXzPackage, TarZStdPackage, Transaction},
+    download::OwnedDownloadCfg,
+};
 use crate::errors::RustupError;
 use crate::process::Process;
 use crate::utils;
@@ -109,7 +110,7 @@ impl Manifestation {
         new_manifest: Arc<Manifest>,
         changes: Changes,
         force_update: bool,
-        download_cfg: Arc<DownloadCfg<'_>>,
+        download_cfg: DownloadCfg<'_>,
         toolchain_str: &str,
         implicit_modify: bool,
     ) -> Result<UpdateStatus> {
@@ -126,7 +127,7 @@ impl Manifestation {
             &*new_manifest,
             &changes,
             &config,
-            &download_cfg.notify_handler,
+            &*download_cfg.notify_handler,
         )?;
 
         if update.nothing_changes() {
@@ -175,7 +176,7 @@ impl Manifestation {
         let mut tx = Transaction::new(
             prefix.clone(),
             tmp_cx,
-            download_cfg.notify_handler,
+            &*download_cfg.notify_handler,
             download_cfg.process,
         );
 
@@ -210,7 +211,7 @@ impl Manifestation {
                 component,
                 &*new_manifest,
                 tx,
-                &download_cfg.notify_handler,
+                &*download_cfg.notify_handler,
                 download_cfg.process,
             )?;
         }
@@ -228,13 +229,12 @@ impl Manifestation {
                 let download_tx = download_tx.clone();
                 {
                     let this = Arc::clone(&self);
-                    let download_cfg = Arc::clone(&download_cfg);
                     let new_manifest = Arc::clone(&new_manifest);
+                    let download_cfg = download_cfg.clone();
                     move |(component, format, url, hash)| {
                         let sem = semaphore.clone();
                         let download_tx = download_tx.clone();
                         let this = Arc::clone(&this);
-                        let download_cfg = Arc::clone(&download_cfg);
                         let new_manifest = Arc::clone(&new_manifest);
                         async move {
                             let _permit = sem.acquire().await.unwrap();
@@ -245,7 +245,7 @@ impl Manifestation {
                                 hash,
                                 altered,
                                 tmp_cx,
-                                &*download_cfg,
+                                &download_cfg,
                                 max_retries,
                                 &*new_manifest,
                                 download_tx,
@@ -271,10 +271,9 @@ impl Manifestation {
                 }
                 hashes
             };
-            let install_handle = tokio::spawn({
-                let this = Arc::clone(&self);
-                let download_cfg = Arc::clone(&download_cfg);
+            let install_handle = {
                 let new_manifest = Arc::clone(&new_manifest);
+                let download_cfg = Arc::new(download_cfg.to_owned());
                 async move {
                     let mut current_tx = tx;
                     let mut counter = 0;
@@ -282,17 +281,27 @@ impl Manifestation {
                         && let Some(message) = download_rx.recv().await
                     {
                         let (component, format, installer_file) = message?;
-                        let new_tx = this.install_component(
-                            component.clone(),
-                            format,
-                            installer_file,
-                            tmp_cx,
-                            &*download_cfg,
-                            &*new_manifest,
-                            current_tx,
-                        )?;
+                        let component_name = component.short_name(&*new_manifest);
+                        let new_tx = tokio::task::spawn_blocking({
+                            let this = Arc::clone(&self);
+                            let new_manifest = Arc::clone(&new_manifest);
+                            let download_cfg = Arc::clone(&download_cfg);
+                            move || {
+                                let download_cfg = (&*download_cfg).into();
+                                this.install_component(
+                                    component,
+                                    format,
+                                    installer_file,
+                                    tmp_cx,
+                                    &download_cfg,
+                                    &*new_manifest,
+                                    current_tx,
+                                )
+                            }
+                        })
+                        .await??;
                         (download_cfg.notify_handler)(Notification::ComponentInstalled(
-                            &component.short_name(&*new_manifest),
+                            &component_name,
                             &self.target_triple,
                             Some(&self.target_triple),
                         ));
@@ -301,11 +310,11 @@ impl Manifestation {
                     }
                     Ok::<_, Error>(current_tx)
                 }
-            });
+            };
 
             let (download_results, install_result) = tokio::join!(download_handle, install_handle);
             things_downloaded = download_results;
-            tx = install_result??;
+            tx = install_result?;
         }
 
         // Install new distribution manifest

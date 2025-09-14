@@ -120,10 +120,11 @@ impl Display for Notification<'_> {
     }
 }
 
+#[derive(Clone)]
 pub struct Context {
     root_directory: PathBuf,
     pub dist_server: String,
-    notify_handler: Box<dyn Fn(Notification<'_>) + Sync + Send + 'static>,
+    notify_handler: Box<NotifyHandler>,
 }
 
 impl Context {
