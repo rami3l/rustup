@@ -1078,11 +1078,12 @@ async fn try_update_from_dist_(
 ) -> Result<Option<String>> {
     let toolchain_str = toolchain.to_string();
     let manifestation = Manifestation::open(prefix.clone(), toolchain.target.clone())?;
+    let notify_handler = Arc::clone(&download.notify_handler);
 
     // TODO: Add a notification about which manifest version is going to be used
-    (download.notify_handler)(Notification::DownloadingManifest(&toolchain_str));
+    notify_handler(Notification::DownloadingManifest(&toolchain_str));
     match dl_v2_manifest(
-        download,
+        download.clone(),
         // Even if manifest has not changed, we must continue to install requested components.
         // So if components or targets is not empty, we skip passing `update_hash` so that
         // we essentially degenerate to `rustup component add` / `rustup target add`
@@ -1096,7 +1097,7 @@ async fn try_update_from_dist_(
     .await
     {
         Ok(Some((m, hash))) => {
-            (download.notify_handler)(Notification::DownloadedManifest(
+            notify_handler(Notification::DownloadedManifest(
                 &m.date,
                 m.get_rust_version().ok(),
             ));
@@ -1181,7 +1182,7 @@ async fn try_update_from_dist_(
                 Some(RustupError::ChecksumFailed { .. }) => return Ok(None),
                 Some(RustupError::DownloadNotExists { .. }) => {
                     // Proceed to try v1 as a fallback
-                    (download.notify_handler)(Notification::DownloadingLegacyManifest)
+                    notify_handler(Notification::DownloadingLegacyManifest)
                 }
                 _ => return Err(err),
             }
