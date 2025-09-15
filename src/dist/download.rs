@@ -80,12 +80,12 @@ impl<'a> DownloadCfg<'a> {
         utils::ensure_dir_exists(
             "Download Directory",
             self.download_dir,
-            &self.notify_handler,
+            &*self.notify_handler,
         )?;
         let target_file = self.download_dir.join(Path::new(hash));
 
         if target_file.exists() {
-            let cached_result = file_hash(&target_file, self.notify_handler)?;
+            let cached_result = file_hash(&target_file, &*self.notify_handler)?;
             if hash == cached_result {
                 (self.notify_handler)(Notification::FileAlreadyDownloaded);
                 (self.notify_handler)(Notification::ChecksumValid(url.as_ref()));
@@ -149,7 +149,7 @@ impl<'a> DownloadCfg<'a> {
                 "downloaded",
                 &partial_file_path,
                 &target_file,
-                self.notify_handler,
+                &*self.notify_handler,
                 self.process,
             )?;
             Ok(File { path: target_file })
@@ -192,7 +192,7 @@ impl<'a> DownloadCfg<'a> {
         url_str: &str,
         update_hash: Option<&Path>,
         ext: &str,
-    ) -> Result<Option<(temp::File<'a>, String)>> {
+    ) -> Result<Option<(temp::File, String)>> {
         let hash = self.download_hash(url_str).await?;
         let partial_hash: String = hash.chars().take(UPDATE_HASH_LEN).collect();
 

@@ -1491,14 +1491,14 @@ async fn reuse_downloaded_file() {
 
     let reuse_notification_fired = Arc::new(Mutex::new(false));
     let dl_cfg = DownloadCfg {
-        notify_handler: &{
+        notify_handler: Arc::new({
             let reuse_notification_fired = Arc::clone(&reuse_notification_fired);
             move |n| {
                 if let Notification::FileAlreadyDownloaded = n {
                     *reuse_notification_fired.lock().unwrap() = true;
                 }
             }
-        },
+        }),
         ..cx.default_dl_cfg()
     };
 

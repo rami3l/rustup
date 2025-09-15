@@ -450,9 +450,9 @@ impl Manifestation {
         &self,
         new_manifest: &[String],
         update_hash: Option<&Path>,
-        tmp_cx: &temp::Context,
-        notify_handler: &NotifyHandler,
-        process: &Process,
+        tmp_cx: Arc<temp::Context>,
+        notify_handler: Arc<NotifyHandler>,
+        process: Arc<Process>,
     ) -> Result<Option<String>> {
         // If there's already a v2 installation then something has gone wrong
         if self.read_config()?.is_some() {
@@ -487,9 +487,9 @@ impl Manifestation {
         let dlcfg = DownloadCfg {
             dist_root: "bogus",
             download_dir: &dld_dir,
-            tmp_cx,
-            notify_handler,
-            process,
+            tmp_cx: &*tmp_cx,
+            notify_handler: Arc::clone(&notify_handler),
+            process: &process,
         };
 
         let dl = dlcfg
@@ -509,12 +509,17 @@ impl Manifestation {
         ));
 
         // Begin transaction
-        let mut tx = Transaction::new(prefix, tmp_cx, notify_handler, process);
+        let mut tx = Transaction::new(
+            prefix,
+            Arc::clone(&tmp_cx),
+            Arc::clone(&notify_handler),
+            Arc::clone(&process),
+        );
 
         // Uninstall components
         let components = self.installation.list()?;
         for component in components {
-            tx = component.uninstall(tx, process)?;
+            tx = component.uninstall(tx, &process)?;
         }
 
         // Install all the components in the installer
@@ -524,7 +529,7 @@ impl Manifestation {
         let reader =
             utils::FileReaderWithProgress::new_file(&installer_file, &notification_converter)?;
         let package: &dyn Package =
-            &TarGzPackage::new(reader, tmp_cx, Some(&notification_converter), process)?;
+            &TarGzPackage::new(reader, tmp_cx, Some(&notification_converter), &process)?;
 
         for component in package.components() {
             tx = package.install(&self.installation, &component, None, tx)?;

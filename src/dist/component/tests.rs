@@ -27,7 +27,12 @@ fn add_file() {
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let mut file = tx.add_file("c", PathBuf::from("foo/bar")).unwrap();
     write!(file, "test").unwrap();
@@ -51,12 +56,17 @@ fn add_file_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     tx.add_file("c", PathBuf::from("foo/bar")).unwrap();
     drop(tx);
@@ -72,14 +82,19 @@ fn add_file_that_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     fs::create_dir_all(prefixdir.path().join("foo")).unwrap();
     utils::write_file("", &prefixdir.path().join("foo/bar"), "").unwrap();
@@ -104,14 +119,19 @@ fn copy_file() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let srcpath = srcdir.path().join("bar");
     utils::write_file("", &srcpath, "").unwrap();
@@ -132,14 +152,19 @@ fn copy_file_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let srcpath = srcdir.path().join("bar");
     utils::write_file("", &srcpath, "").unwrap();
@@ -160,14 +185,19 @@ fn copy_file_that_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let srcpath = srcdir.path().join("bar");
     utils::write_file("", &srcpath, "").unwrap();
@@ -197,14 +227,19 @@ fn copy_dir() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let srcpath1 = srcdir.path().join("foo");
     let srcpath2 = srcdir.path().join("bar/baz");
@@ -232,14 +267,19 @@ fn copy_dir_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let srcpath1 = srcdir.path().join("foo");
     let srcpath2 = srcdir.path().join("bar/baz");
@@ -267,14 +307,19 @@ fn copy_dir_that_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     fs::create_dir_all(prefix.path().join("a")).unwrap();
 
@@ -299,14 +344,19 @@ fn remove_file() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let filepath = prefixdir.path().join("foo");
     utils::write_file("", &filepath, "").unwrap();
@@ -325,14 +375,19 @@ fn remove_file_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let filepath = prefixdir.path().join("foo");
     utils::write_file("", &filepath, "").unwrap();
@@ -351,14 +406,19 @@ fn remove_file_that_not_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let err = tx.remove_file("c", PathBuf::from("foo")).unwrap_err();
 
@@ -379,14 +439,19 @@ fn remove_dir() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let filepath = prefixdir.path().join("foo/bar");
     fs::create_dir_all(filepath.parent().unwrap()).unwrap();
@@ -406,14 +471,19 @@ fn remove_dir_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let filepath = prefixdir.path().join("foo/bar");
     fs::create_dir_all(filepath.parent().unwrap()).unwrap();
@@ -433,14 +503,19 @@ fn remove_dir_that_not_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let err = tx.remove_dir("c", PathBuf::from("foo")).unwrap_err();
 
@@ -461,14 +536,19 @@ fn write_file() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let content = "hi".to_string();
     tx.write_file("c", PathBuf::from("foo/bar"), content.clone())
@@ -489,14 +569,19 @@ fn write_file_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let content = "hi".to_string();
     tx.write_file("c", PathBuf::from("foo/bar"), content)
@@ -514,14 +599,19 @@ fn write_file_that_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let content = "hi".to_string();
     utils_raw::write_file(&prefix.path().join("a"), &content).unwrap();
@@ -546,14 +636,19 @@ fn modify_file_that_not_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     tx.modify_file(PathBuf::from("foo/bar")).unwrap();
     tx.commit();
@@ -571,14 +666,19 @@ fn modify_file_that_exists() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let path = prefix.path().join("foo");
     utils_raw::write_file(&path, "wow").unwrap();
@@ -596,14 +696,19 @@ fn modify_file_that_not_exists_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     tx.modify_file(PathBuf::from("foo/bar")).unwrap();
     drop(tx);
@@ -619,14 +724,19 @@ fn modify_file_that_exists_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let path = prefix.path().join("foo");
     utils_raw::write_file(&path, "wow").unwrap();
@@ -647,14 +757,19 @@ fn modify_twice_then_rollback() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     let path = prefix.path().join("foo");
     utils_raw::write_file(&path, "wow").unwrap();
@@ -675,14 +790,19 @@ fn do_multiple_op_transaction(rollback: bool) {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     // copy_file
     let relpath1 = PathBuf::from("bin/rustc");
@@ -777,14 +897,19 @@ fn rollback_failure_keeps_going() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let prefix = InstallPrefix::from(prefixdir.path());
 
     let notify = |_: Notification<'_>| ();
     let tp = TestProcess::default();
-    let mut tx = Transaction::new(prefix.clone(), &tmp_cx, &notify, &tp.process);
+    let mut tx = Transaction::new(
+        prefix.clone(),
+        Arc::new(tmp_cx),
+        Arc::new(notify),
+        Arc::new(tp.process),
+    );
 
     write!(tx.add_file("", PathBuf::from("foo")).unwrap(), "").unwrap();
     write!(tx.add_file("", PathBuf::from("bar")).unwrap(), "").unwrap();

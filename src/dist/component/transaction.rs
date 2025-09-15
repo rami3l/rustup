@@ -103,9 +103,9 @@ impl Transaction {
             &self.prefix,
             component,
             relpath,
-            self.tmp_cx,
-            self.notify_handler(),
-            self.process,
+            Arc::clone(&self.tmp_cx),
+            &*self.notify_handler,
+            &self.process,
         )?;
         self.change(item);
         Ok(())
@@ -119,9 +119,9 @@ impl Transaction {
             &self.prefix,
             component,
             relpath,
-            self.tmp_cx,
-            self.notify_handler(),
-            self.process,
+            Arc::clone(&self.tmp_cx),
+            &*self.notify_handler,
+            &self.process,
         )?;
         self.change(item);
         Ok(())
@@ -148,7 +148,7 @@ impl Transaction {
     /// This is used for arbitrarily manipulating a file.
     pub fn modify_file(&mut self, relpath: PathBuf) -> Result<()> {
         assert!(relpath.is_relative());
-        let item = ChangedItem::modify_file(&self.prefix, relpath, self.tmp_cx)?;
+        let item = ChangedItem::modify_file(&self.prefix, relpath, Arc::clone(&self.tmp_cx))?;
         self.change(item);
         Ok(())
     }
@@ -166,8 +166,8 @@ impl Transaction {
             component,
             relpath,
             src,
-            self.notify_handler(),
-            self.process,
+            &*self.notify_handler,
+            &self.process,
         )?;
         self.change(item);
         Ok(())
@@ -181,31 +181,32 @@ impl Transaction {
             component,
             relpath,
             src,
-            self.notify_handler(),
-            self.process,
+            &*self.notify_handler,
+            &self.process,
         )?;
         self.change(item);
         Ok(())
     }
 
-    pub(crate) fn temp(&self) -> &'a temp::Context {
-        self.tmp_cx
+    pub(crate) fn temp(&self) -> Arc<temp::Context> {
+        Arc::clone(&self.tmp_cx)
     }
-    pub(crate) fn notify_handler(&self) -> &'a dyn Fn(Notification<'_>) {
-        self.notify_handler
+
+    pub(crate) fn notify_handler(&self) -> Arc<NotifyHandler> {
+        Arc::clone(&self.notify_handler)
     }
 }
 
 /// If a Transaction is dropped without being committed, the changes
 /// are automatically rolled back.
-impl Drop for Transaction<'_> {
+impl Drop for Transaction {
     fn drop(&mut self) {
         if !self.committed {
             (self.notify_handler)(Notification::RollingBack);
             for item in self.changes.iter().rev() {
                 // ok_ntfy!(self.notify_handler,
                 //          Notification::NonFatalError,
-                match item.roll_back(&self.prefix, self.notify_handler(), self.process) {
+                match item.roll_back(&self.prefix, &*self.notify_handler(), &self.process) {
                     Ok(()) => {}
                     Err(e) => {
                         (self.notify_handler)(Notification::NonFatalError(&e));
@@ -308,7 +309,7 @@ impl ChangedItem {
         prefix: &InstallPrefix,
         component: &str,
         relpath: PathBuf,
-        tmp_cx: &temp::Context,
+        tmp_cx: Arc<temp::Context>,
         notify: &NotifyHandler,
         process: &Process,
     ) -> Result<Self> {
@@ -322,7 +323,7 @@ impl ChangedItem {
             .into())
         } else {
             utils::rename("component", &abs_path, &backup, notify, process)?;
-            Ok(ChangedItem::RemovedFile(relpath, backup))
+            Ok(ChangedItem::RemovedFile(relpath, Arc::new(backup)))
         }
     }
 
