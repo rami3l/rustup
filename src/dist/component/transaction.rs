@@ -43,7 +43,7 @@ pub struct Transaction {
     process: Arc<Process>,
 }
 
-impl<'a> Transaction<'a> {
+impl Transaction {
     pub fn new(
         prefix: InstallPrefix,
         tmp_cx: Arc<temp::Context>,
