@@ -294,9 +294,9 @@ impl Manifestation {
                                     component,
                                     format,
                                     installer_file,
-                                    &tmp_cx,
-                                    &download_cfg,
-                                    &*new_manifest,
+                                    Arc::new(tmp_cx),
+                                    download_cfg,
+                                    Arc::clone(&new_manifest),
                                     current_tx,
                                 )
                             }
@@ -614,23 +614,23 @@ impl Manifestation {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn install_component<'a>(
+    fn install_component(
         &self,
         component: Component,
         format: CompressionKind,
         installer_file: File,
-        tmp_cx: &temp::Context,
-        download_cfg: &DownloadCfg<'_>,
-        new_manifest: &Manifest,
-        tx: Transaction<'a>,
-    ) -> Result<Transaction<'a>> {
+        tmp_cx: Arc<temp::Context>,
+        download_cfg: DownloadCfg<'_>,
+        new_manifest: Arc<Manifest>,
+        tx: Transaction,
+    ) -> Result<Transaction> {
         // For historical reasons, the rust-installer component
         // names are not the same as the dist manifest component
         // names. Some are just the component name some are the
         // component name plus the target triple.
         let pkg_name = component.name_in_manifest();
         let short_pkg_name = component.short_name_in_manifest();
-        let short_name = component.short_name(new_manifest);
+        let short_name = component.short_name(&new_manifest);
 
         (download_cfg.notify_handler)(Notification::InstallingComponent(
             &short_name,

@@ -974,7 +974,7 @@ pub(crate) async fn update_from_dist(
     let mut toolchain = opts.toolchain.clone();
     let res = loop {
         let result = try_update_from_dist_(
-            opts.dl_cfg,
+            opts.dl_cfg.clone(),
             opts.update_hash,
             &toolchain,
             match opts.exists {
@@ -1189,7 +1189,7 @@ async fn try_update_from_dist_(
     }
 
     // If the v2 manifest is not found then try v1
-    let manifest = match dl_v1_manifest(download, toolchain).await {
+    let manifest = match dl_v1_manifest(download.clone(), toolchain).await {
         Ok(m) => m,
         Err(err) => match err.downcast_ref::<RustupError>() {
             Some(RustupError::ChecksumFailed { .. }) => return Err(err),
@@ -1209,13 +1209,14 @@ async fn try_update_from_dist_(
         },
     };
 
+    let download = download.to_owned();
     let result = manifestation
         .update_v1(
             &manifest,
             update_hash,
-            download.tmp_cx,
+            Arc::new(download.tmp_cx),
             download.notify_handler,
-            download.process,
+            Arc::new(download.process),
         )
         .await;
 
