@@ -229,11 +229,11 @@ enum ChangedItem {
     ModifiedFile(PathBuf, Option<Arc<temp::File>>),
 }
 
-impl<'a> ChangedItem<'a> {
+impl ChangedItem {
     fn roll_back(
         &self,
         prefix: &InstallPrefix,
-        notify: &'a dyn Fn(Notification<'_>),
+        notify: &NotifyHandler,
         process: &Process,
     ) -> Result<()> {
         use self::ChangedItem::*;
@@ -259,6 +259,7 @@ impl<'a> ChangedItem<'a> {
         }
         Ok(())
     }
+
     fn dest_abs_path(prefix: &InstallPrefix, component: &str, relpath: &Path) -> Result<PathBuf> {
         let abs_path = prefix.abs_path(relpath);
         if utils::path_exists(&abs_path) {
@@ -273,12 +274,14 @@ impl<'a> ChangedItem<'a> {
             Ok(abs_path)
         }
     }
+
     fn add_file(prefix: &InstallPrefix, component: &str, relpath: PathBuf) -> Result<(Self, File)> {
         let abs_path = ChangedItem::dest_abs_path(prefix, component, &relpath)?;
         let file = File::create(&abs_path)
             .with_context(|| format!("error creating file '{}'", abs_path.display()))?;
         Ok((ChangedItem::AddedFile(relpath), file))
     }
+
     fn copy_file(
         prefix: &InstallPrefix,
         component: &str,
@@ -289,6 +292,7 @@ impl<'a> ChangedItem<'a> {
         utils::copy_file(src, &abs_path)?;
         Ok(ChangedItem::AddedFile(relpath))
     }
+
     fn copy_dir(
         prefix: &InstallPrefix,
         component: &str,
@@ -299,12 +303,13 @@ impl<'a> ChangedItem<'a> {
         utils::copy_dir(src, &abs_path, &|_: Notification<'_>| ())?;
         Ok(ChangedItem::AddedDir(relpath))
     }
+
     fn remove_file(
         prefix: &InstallPrefix,
         component: &str,
         relpath: PathBuf,
-        tmp_cx: &'a temp::Context,
-        notify: &'a dyn Fn(Notification<'_>),
+        tmp_cx: &temp::Context,
+        notify: &NotifyHandler,
         process: &Process,
     ) -> Result<Self> {
         let abs_path = prefix.abs_path(&relpath);
@@ -320,12 +325,13 @@ impl<'a> ChangedItem<'a> {
             Ok(ChangedItem::RemovedFile(relpath, backup))
         }
     }
+
     fn remove_dir(
         prefix: &InstallPrefix,
         component: &str,
         relpath: PathBuf,
-        tmp_cx: &'a temp::Context,
-        notify: &'a dyn Fn(Notification<'_>),
+        tmp_cx: Arc<temp::Context>,
+        notify: &NotifyHandler,
         process: &Process,
     ) -> Result<Self> {
         let abs_path = prefix.abs_path(&relpath);
@@ -338,20 +344,21 @@ impl<'a> ChangedItem<'a> {
             .into())
         } else {
             utils::rename("component", &abs_path, &backup.join("bk"), notify, process)?;
-            Ok(ChangedItem::RemovedDir(relpath, backup))
+            Ok(ChangedItem::RemovedDir(relpath, Arc::new(backup)))
         }
     }
+
     fn modify_file(
         prefix: &InstallPrefix,
         relpath: PathBuf,
-        tmp_cx: &'a temp::Context,
+        tmp_cx: Arc<temp::Context>,
     ) -> Result<Self> {
         let abs_path = prefix.abs_path(&relpath);
 
         if utils::is_file(&abs_path) {
             let backup = tmp_cx.new_file()?;
             utils::copy_file(&abs_path, &backup)?;
-            Ok(ChangedItem::ModifiedFile(relpath, Some(backup)))
+            Ok(ChangedItem::ModifiedFile(relpath, Some(Arc::new(backup))))
         } else {
             if let Some(p) = abs_path.parent() {
                 utils::ensure_dir_exists("component", p, &|_: Notification<'_>| {})?;
@@ -359,24 +366,26 @@ impl<'a> ChangedItem<'a> {
             Ok(ChangedItem::ModifiedFile(relpath, None))
         }
     }
+
     fn move_file(
         prefix: &InstallPrefix,
         component: &str,
         relpath: PathBuf,
         src: &Path,
-        notify: &'a dyn Fn(Notification<'_>),
+        notify: &NotifyHandler,
         process: &Process,
     ) -> Result<Self> {
         let abs_path = ChangedItem::dest_abs_path(prefix, component, &relpath)?;
         utils::rename("component", src, &abs_path, notify, process)?;
         Ok(ChangedItem::AddedFile(relpath))
     }
+
     fn move_dir(
         prefix: &InstallPrefix,
         component: &str,
         relpath: PathBuf,
         src: &Path,
-        notify: &'a dyn Fn(Notification<'_>),
+        notify: &NotifyHandler,
         process: &Process,
     ) -> Result<Self> {
         let abs_path = ChangedItem::dest_abs_path(prefix, component, &relpath)?;
