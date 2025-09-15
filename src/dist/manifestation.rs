@@ -275,7 +275,7 @@ impl Manifestation {
                 let new_manifest = Arc::clone(&new_manifest);
                 let download_cfg = Arc::new(download_cfg.to_owned());
                 async move {
-                    let mut current_tx = Some(tx);
+                    let mut current_tx = tx;
                     let mut counter = 0;
                     while counter < total_components
                         && let Some(message) = download_rx.recv().await
@@ -283,8 +283,7 @@ impl Manifestation {
                         let (component, format, installer_file) = message?;
                         let component_name = component.short_name(&*new_manifest);
                         let notify_handler = Arc::clone(&download_cfg.notify_handler);
-                        let old_tx = current_tx.take().unwrap();
-                        let new_tx = tokio::task::spawn_blocking({
+                        current_tx = tokio::task::spawn_blocking({
                             let this = Arc::clone(&self);
                             let new_manifest = Arc::clone(&new_manifest);
                             let tmp_cx = download_cfg.tmp_cx.clone();
@@ -298,7 +297,7 @@ impl Manifestation {
                                     &tmp_cx,
                                     &download_cfg,
                                     &*new_manifest,
-                                    old_tx,
+                                    current_tx,
                                 )
                             }
                         })
@@ -308,7 +307,6 @@ impl Manifestation {
                             &self.target_triple,
                             Some(&self.target_triple),
                         ));
-                        current_tx = Some(new_tx);
                         counter += 1;
                     }
                     Ok::<_, Error>(current_tx)
@@ -317,7 +315,7 @@ impl Manifestation {
 
             let (download_results, install_result) = tokio::join!(download_handle, install_handle);
             things_downloaded = download_results;
-            tx = install_result?.unwrap();
+            tx = install_result?;
         }
 
         // Install new distribution manifest
