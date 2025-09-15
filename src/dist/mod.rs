@@ -1,7 +1,13 @@
 //! Installation from a Rust distribution server
 
 use std::{
-    collections::HashSet, env, fmt, io::Write, ops::Deref, path::Path, str::FromStr, sync::LazyLock,
+    collections::HashSet,
+    env, fmt,
+    io::Write,
+    ops::Deref,
+    path::Path,
+    str::FromStr,
+    sync::{Arc, LazyLock},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -1140,12 +1146,12 @@ async fn try_update_from_dist_(
 
             fetched.clone_from(&m.date);
 
-            return match manifestation
+            return match Arc::new(manifestation)
                 .update(
-                    &m,
+                    Arc::new(m),
                     changes,
                     force_update,
-                    &download,
+                    download,
                     &toolchain.manifest_name(),
                     true,
                 )

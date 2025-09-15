@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::dist::DEFAULT_DIST_SERVER;
 use crate::dist::Notification;
@@ -21,7 +22,7 @@ fn add_file() {
     let tmp_cx = temp::Context::new(
         txdir.path().to_owned(),
         DEFAULT_DIST_SERVER,
-        Box::new(|_| ()),
+        Arc::new(|_| ()),
     );
 
     let notify = |_: Notification<'_>| ();

@@ -66,7 +66,7 @@ impl Transaction {
         self.committed = true;
     }
 
-    fn change(&mut self, item: ChangedItem<'a>) {
+    fn change(&mut self, item: ChangedItem) {
         self.changes.push(item);
     }
 

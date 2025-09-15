@@ -114,14 +114,14 @@ impl<'a> DistributableToolchain<'a> {
 
         let notify_handler = Arc::clone(&self.toolchain.cfg.notify_handler);
         let notify_handler = move |n: crate::dist::Notification<'_>| (notify_handler)(n.into());
-        let download_cfg = self.toolchain.cfg.download_cfg(&notify_handler);
+        let download_cfg = self.toolchain.cfg.download_cfg(Arc::new(notify_handler));
 
-        manifestation
+        Arc::new(manifestation)
             .update(
-                &manifest,
+                Arc::new(manifest),
                 changes,
                 false,
-                &download_cfg,
+                download_cfg,
                 &self.desc.manifest_name(),
                 false,
             )
@@ -518,14 +518,14 @@ impl<'a> DistributableToolchain<'a> {
 
         let notify_handler = Arc::clone(&self.toolchain.cfg.notify_handler);
         let notify_handler = move |n: crate::dist::Notification<'_>| (notify_handler)(n.into());
-        let download_cfg = self.toolchain.cfg.download_cfg(&notify_handler);
+        let download_cfg = self.toolchain.cfg.download_cfg(Arc::new(notify_handler));
 
-        manifestation
+        Arc::new(manifestation)
             .update(
-                &manifest,
+                Arc::new(manifest),
                 changes,
                 false,
-                &download_cfg,
+                download_cfg,
                 &self.desc.manifest_name(),
                 false,
             )
@@ -538,7 +538,7 @@ impl<'a> DistributableToolchain<'a> {
         let update_hash = self.toolchain.cfg.get_hash_file(&self.desc, false)?;
         let notify_handler = Arc::clone(&self.toolchain.cfg.notify_handler);
         let notify_handler = move |n: crate::dist::Notification<'_>| (notify_handler)(n.into());
-        let download_cfg = self.toolchain.cfg.download_cfg(&notify_handler);
+        let download_cfg = self.toolchain.cfg.download_cfg(Arc::new(notify_handler));
 
         match crate::dist::dl_v2_manifest(download_cfg, Some(&update_hash), &self.desc).await? {
             Some((manifest, _)) => Ok(Some(manifest.get_rust_version()?.to_string())),

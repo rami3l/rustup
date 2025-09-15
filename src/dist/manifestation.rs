@@ -350,14 +350,19 @@ impl Manifestation {
     #[cfg(test)]
     pub fn uninstall(
         &self,
-        manifest: &Manifest,
-        tmp_cx: &temp::Context,
-        notify_handler: &NotifyHandler,
-        process: &Process,
+        manifest: Arc<Manifest>,
+        tmp_cx: Arc<temp::Context>,
+        notify_handler: Arc<NotifyHandler>,
+        process: Arc<Process>,
     ) -> Result<()> {
         let prefix = self.installation.prefix();
 
-        let mut tx = Transaction::new(prefix.clone(), tmp_cx, notify_handler, process);
+        let mut tx = Transaction::new(
+            prefix.clone(),
+            Arc::clone(&tmp_cx),
+            Arc::clone(&notify_handler),
+            Arc::clone(&process),
+        );
 
         // Read configuration and delete it
         let rel_config_path = prefix.rel_manifest_file(CONFIG_FILE);
@@ -370,21 +375,21 @@ impl Manifestation {
         tx.remove_file("dist config", rel_config_path)?;
 
         for component in config.components {
-            tx = self.uninstall_component(&component, manifest, tx, notify_handler, process)?;
+            tx = self.uninstall_component(&component, &manifest, tx, &*notify_handler, &process)?;
         }
         tx.commit();
 
         Ok(())
     }
 
-    fn uninstall_component<'a>(
+    fn uninstall_component(
         &self,
         component: &Component,
         manifest: &Manifest,
-        mut tx: Transaction<'a>,
-        notify_handler: &dyn Fn(Notification<'_>),
+        mut tx: Transaction,
+        notify_handler: &NotifyHandler,
         process: &Process,
-    ) -> Result<Transaction<'a>> {
+    ) -> Result<Transaction> {
         // For historical reasons, the rust-installer component
         // names are not the same as the dist manifest component
         // names. Some are just the component name some are the
@@ -535,12 +540,12 @@ impl Manifestation {
     // doesn't have a configuration or manifest-derived list of
     // component/target pairs. Uninstall it using the installer's
     // component list before upgrading.
-    fn maybe_handle_v2_upgrade<'a>(
+    fn maybe_handle_v2_upgrade(
         &self,
         config: &Option<Config>,
-        mut tx: Transaction<'a>,
+        mut tx: Transaction,
         process: &Process,
-    ) -> Result<Transaction<'a>> {
+    ) -> Result<Transaction> {
         let installed_components = self.installation.list()?;
         let looks_like_v1 = config.is_none() && !installed_components.is_empty();
 
