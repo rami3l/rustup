@@ -45,7 +45,7 @@ use anyhow::{Context, Result, anyhow};
 use cfg_if::cfg_if;
 use clap::ValueEnum;
 use clap::builder::PossibleValue;
-use clap_cargo::style::{GOOD, WARN};
+use clap_cargo::style::WARN;
 use itertools::Itertools;
 use same_file::Handle;
 use serde::{Deserialize, Serialize};
@@ -307,7 +307,9 @@ impl SelfUpdateMode {
         match self {
             Self::Enable if should_self_update => (),
             Self::CheckOnly => {
-                check_rustup_update(dl_cfg).await?;
+                if let Some(msg) = check_rustup_update(dl_cfg).await? {
+                    writeln!(dl_cfg.process.stdout().lock(), "{msg}")?;
+                }
                 return Ok(ExitCode::SUCCESS);
             }
             _ => return Ok(ExitCode::SUCCESS),
@@ -1385,31 +1387,19 @@ impl fmt::Display for SchemaVersion {
 }
 
 /// Returns whether an update was available
-pub(crate) async fn check_rustup_update(dl_cfg: &DownloadCfg<'_>) -> Result<bool> {
-    let t = dl_cfg.process.stdout();
-    let mut t = t.lock();
+pub(crate) async fn check_rustup_update(dl_cfg: &DownloadCfg<'_>) -> Result<Option<String>> {
     // Get current rustup version
     let current_version = env!("CARGO_PKG_VERSION");
 
     // Get available rustup version
     let available_version = get_available_rustup_version(dl_cfg).await?;
-
-    let bold = Style::new().bold();
-    let yellow = WARN;
-    let green = GOOD;
-
-    write!(t, "{bold}rustup - {bold:#}")?;
-
-    Ok(if current_version != available_version {
-        writeln!(
-            t,
-            "{yellow}update available{yellow:#} : {current_version} -> {available_version}"
-        )?;
-        true
-    } else {
-        writeln!(t, "{green}up to date{green:#} : {current_version}")?;
-        false
-    })
+    Ok((current_version != available_version).then(|| {
+        format!(
+            "{bold}rustup - {bold:#}{yellow}update available{yellow:#} : {current_version} -> {available_version}",
+            bold = Style::new().bold(),
+            yellow = WARN,
+        )
+    }))
 }
 
 #[tracing::instrument(level = "trace")]

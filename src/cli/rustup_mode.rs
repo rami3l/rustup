@@ -16,7 +16,7 @@ use anyhow::{Context, Error, Result, anyhow};
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum, builder::PossibleValue};
 use clap_cargo::style::{CONTEXT, ERROR, GOOD, HEADER, TRANSIENT, WARN};
 use clap_complete::Shell;
-use futures_util::stream::StreamExt;
+use futures_util::{FutureExt, stream::StreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use tokio::sync::Semaphore;
@@ -820,7 +820,23 @@ async fn check_updates(cfg: &Cfg<'_>, opts: CheckOpts) -> Result<ExitCode> {
     let use_colors = matches!(t.color_choice(), ColorChoice::Auto | ColorChoice::Always);
     let mut update_available = false;
     let channels = cfg.list_channels()?;
-    let channels_len = channels.len();
+    let mut channels_len = channels.len();
+
+    // Check whether we should include self update check as well.
+    let self_update_mode = SelfUpdateMode::from_cfg(cfg)?;
+    // Priority: no-self-update feature > self_update_mode > no-self-update args.
+    // Check for update only if rustup does **not** have the no-self-update feature,
+    // and auto-self-update is configured to **enable** or **check-only**
+    // and has **no** no-self-update parameter.
+    let self_update = !cfg!(feature = "no-self-update")
+        && matches!(
+            self_update_mode,
+            SelfUpdateMode::Enable | SelfUpdateMode::CheckOnly
+        )
+        && !opts.no_self_update;
+    if self_update {
+        channels_len += 1;
+    }
 
     // Check updates for all channels unless `RUSTUP_CONCURRENT_DOWNLOADS` is set to 1,
     // since the overhead of spawning many concurrent tasks here is acceptable.
@@ -893,7 +909,44 @@ async fn check_updates(cfg: &Cfg<'_>, opts: CheckOpts) -> Result<ExitCode> {
                 pb.finish();
                 Ok::<(bool, String), Error>((update_a, template))
             }
+            .left_future()
         });
+
+        let channels = match self_update {
+            false => channels.left_stream(),
+            true => channels
+                .chain(
+                    // HACK: The `.map()` trick below is used to simulate the hypothetical
+                    // `tokio_stream::iter_with()` constructor.
+                    tokio_stream::iter([()]).map(|_| {
+                        let msg = format!("{bold}rustup - {bold:#}");
+                        let pb = add_progress_bar(msg.clone());
+
+                        let sem = semaphore.clone();
+                        async move {
+                            let _permit = sem.acquire().await.unwrap();
+
+                            let (update_a, template) =
+                                match check_rustup_update(&DownloadCfg::new(cfg)).await? {
+                                    Some(s) => (true, s),
+                                    None => {
+                                        let current_version = env!("CARGO_PKG_VERSION");
+                                        let template = format!(
+                                            "{msg}{good}up to date{good:#} : {current_version}",
+                                        );
+                                        (false, template)
+                                    }
+                                };
+
+                            pb.set_style(ProgressStyle::with_template(template.as_str()).unwrap());
+                            pb.finish();
+                            Ok((update_a, template))
+                        }
+                        .right_future()
+                    }),
+                )
+                .right_stream(),
+        };
 
         // If we are running in a TTY, we can use `buffer_unordered` since
         // displaying the output in the correct order is already handled by
@@ -928,22 +981,6 @@ async fn check_updates(cfg: &Cfg<'_>, opts: CheckOpts) -> Result<ExitCode> {
             // might not be desirable in all cases.
             writeln!(t.lock())?;
         }
-    }
-
-    let self_update_mode = SelfUpdateMode::from_cfg(cfg)?;
-    // Priority: no-self-update feature > self_update_mode > no-self-update args.
-    // Check for update only if rustup does **not** have the no-self-update feature,
-    // and auto-self-update is configured to **enable** or **check-only**
-    // and has **no** no-self-update parameter.
-    let self_update = !cfg!(feature = "no-self-update")
-        && matches!(
-            self_update_mode,
-            SelfUpdateMode::Enable | SelfUpdateMode::CheckOnly
-        )
-        && !opts.no_self_update;
-
-    if self_update && check_rustup_update(&DownloadCfg::new(cfg)).await? {
-        update_available = true;
     }
 
     Ok(if update_available {
