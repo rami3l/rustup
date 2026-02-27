@@ -840,21 +840,27 @@ async fn check_updates(cfg: &Cfg<'_>, opts: CheckOpts) -> Result<ExitCode> {
     if channels_len > 0 {
         let multi_progress_bars =
             MultiProgress::with_draw_target(cfg.process.progress_draw_target());
-        let semaphore = Arc::new(Semaphore::new(concurrent_downloads));
-        let channels = tokio_stream::iter(channels.into_iter()).map(|(name, distributable)| {
-            let msg = format!("{bold}{name} - {bold:#}");
+        let add_progress_bar = |msg| {
             let status = "Checking...";
             let template = format!(
                 "{{msg}}{transient}{status}{transient:#} {transient}{{spinner}}{transient:#}"
             );
+
             let pb = multi_progress_bars.add(ProgressBar::new(1));
             pb.set_style(
                 ProgressStyle::with_template(template.as_str())
                     .unwrap()
                     .tick_chars(r"|/-\ "),
             );
-            pb.set_message(msg.clone());
+            pb.set_message(msg);
             pb.enable_steady_tick(Duration::from_millis(100));
+            pb
+        };
+
+        let semaphore = Arc::new(Semaphore::new(concurrent_downloads));
+        let channels = tokio_stream::iter(channels.into_iter()).map(|(name, distributable)| {
+            let msg = format!("{bold}{name} - {bold:#}");
+            let pb = add_progress_bar(msg.clone());
 
             let sem = semaphore.clone();
             async move {
