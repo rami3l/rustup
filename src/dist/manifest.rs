@@ -28,9 +28,10 @@ use crate::{
     toolchain::DistributableToolchain,
 };
 
-/// A download manifest paired with its respective hash, as returned by the dist server.
-pub struct ManifestWithHash {
-    pub manifest: Manifest,
+/// A manifest, toolchain, etc. paired with its respective hash, as returned by the dist server.
+#[derive(Clone, Debug)]
+pub struct Hashed<T> {
+    pub inner: T,
     pub hash: String,
 }
 
