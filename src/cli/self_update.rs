@@ -1171,7 +1171,10 @@ pub(crate) async fn update(cfg: &Cfg<'_>) -> anyhow::Result<ExitCode> {
             let _ = common::show_channel_update(
                 cfg,
                 PackageUpdate::Rustup,
-                Ok(UpdateStatus::Updated(version)),
+                Ok(UpdateStatus::Updated {
+                    from: version,
+                    obj: None,
+                }),
             );
             return run_update(&setup_path, cfg.process);
         }

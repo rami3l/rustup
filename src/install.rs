@@ -1,12 +1,19 @@
 //! Installation and upgrade of both distribution-managed and local
 //! toolchains
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use tracing::debug;
 
 use crate::{
     config::Cfg,
-    dist::{DistOptions, manifest::ManifestWithHash, prefix::InstallPrefix},
+    dist::{
+        DistOptions,
+        manifest::{Hashed, Manifest},
+        prefix::InstallPrefix,
+    },
     errors::RustupError,
     toolchain::{CustomToolchainName, LocalToolchainName, Toolchain},
     utils,
@@ -14,9 +21,28 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) enum UpdateStatus {
-    Installed,
-    Updated(String), // Stores the version of rustc *before* the update
+    Installed {
+        /// The actual object ID of the installation behind the reference.
+        /// If this is an unofficial toolchain, this will be `None`.
+        obj: Option<OsString>,
+    },
+    Updated {
+        /// The version of rustc *before* the update.
+        from: String,
+        /// The actual object ID of the installation behind the reference.
+        /// If this is an unofficial toolchain, this will be `None`.
+        obj: Option<OsString>,
+    },
     Unchanged,
+}
+
+impl UpdateStatus {
+    pub(crate) fn into_obj(self) -> Option<OsString> {
+        match self {
+            Self::Installed { obj: Some(obj) } | Self::Updated { obj: Some(obj), .. } => Some(obj),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) enum InstallMethod<'cfg, 'a> {
@@ -33,7 +59,7 @@ impl InstallMethod<'_, '_> {
     #[tracing::instrument(level = "trace", err(level = "trace"), skip_all)]
     pub(crate) async fn install(
         self,
-        manifest: Option<ManifestWithHash>,
+        manifest: Option<Hashed<Manifest>>,
     ) -> anyhow::Result<UpdateStatus> {
         // Initialize rayon for use by the remove_dir_all crate limiting the number of threads.
         // This will error if rayon is already initialized but it's fine to ignore that.
@@ -50,26 +76,13 @@ impl InstallMethod<'_, '_> {
             _ => debug!("updating existing install for '{local_name}'"),
         }
 
-        debug!("toolchain directory: {}", self.dest_path().display());
-        let updated = self.run(&self.dest_path(), manifest).await?;
+        let dest_path = self.dest_path();
+        debug!("toolchain directory: {}", dest_path.display());
+        let status = self.run(&dest_path, manifest).await?;
 
-        let status = match updated {
-            false => {
-                debug!("toolchain is already up to date");
-                UpdateStatus::Unchanged
-            }
-            true => {
-                debug!("toolchain {local_name} installed");
-                match &self {
-                    InstallMethod::Dist(DistOptions {
-                        old_date_version: Some((_, v)),
-                        ..
-                    }) => UpdateStatus::Updated(v.clone()),
-                    InstallMethod::Link { .. } | InstallMethod::Dist { .. } => {
-                        UpdateStatus::Installed
-                    }
-                }
-            }
+        match &status {
+            UpdateStatus::Unchanged => debug!("toolchain is already up to date"),
+            _ => debug!("toolchain {local_name} installed"),
         };
 
         // Final check, to ensure we're installed
@@ -79,7 +92,11 @@ impl InstallMethod<'_, '_> {
         }
     }
 
-    async fn run(&self, path: &Path, manifest: Option<ManifestWithHash>) -> anyhow::Result<bool> {
+    async fn run(
+        &self,
+        path: &Path,
+        manifest: Option<Hashed<Manifest>>,
+    ) -> anyhow::Result<UpdateStatus> {
         if path.exists() {
             // Don't uninstall first for Dist method
             match self {
@@ -90,23 +107,31 @@ impl InstallMethod<'_, '_> {
             }
         }
 
-        match self {
+        Ok(match self {
             InstallMethod::Link { src, .. } => {
                 utils::symlink_dir(src, path)?;
-                Ok(true)
+                UpdateStatus::Installed { obj: None }
             }
-            InstallMethod::Dist(opts) => {
-                let prefix = &InstallPrefix::from(path.to_owned());
-                let maybe_new_hash = opts.install_into(prefix, manifest).await?;
-
-                if let Some(hash) = maybe_new_hash {
+            InstallMethod::Dist(opts) => match opts
+                .install_into(&InstallPrefix::from(path.to_owned()), manifest)
+                .await?
+            {
+                None => UpdateStatus::Unchanged,
+                Some(Hashed { inner: obj, hash }) => {
                     utils::write_file("update hash", &opts.update_hash, &hash)?;
-                    Ok(true)
-                } else {
-                    Ok(false)
+                    match opts {
+                        DistOptions {
+                            old_date_version: Some((_, v)),
+                            ..
+                        } => UpdateStatus::Updated {
+                            obj,
+                            from: v.clone(),
+                        },
+                        _ => UpdateStatus::Installed { obj },
+                    }
                 }
-            }
-        }
+            },
+        })
     }
 
     fn cfg(&self) -> &Cfg<'_> {
@@ -126,7 +151,7 @@ impl InstallMethod<'_, '_> {
     }
 
     fn dest_path(&self) -> PathBuf {
-        self.cfg().toolchain_path(&self.local_name())
+        self.cfg().ref_path(&self.local_name())
     }
 }
 
