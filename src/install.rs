@@ -55,8 +55,9 @@ impl InstallMethod<'_, '_> {
             _ => debug!("updating existing install for '{}'", self.dest_basename()),
         }
 
-        debug!("toolchain directory: {}", self.dest_path().display());
-        let updated = self.run(&self.dest_path(), manifest).await?;
+        let dest_path = self.dest_path();
+        debug!("toolchain directory: {}", dest_path.display());
+        let updated = self.run(&dest_path, manifest).await?;
 
         let status = match updated {
             false => {
@@ -144,13 +145,13 @@ impl InstallMethod<'_, '_> {
     fn dest_path(&self) -> PathBuf {
         match self {
             InstallMethod::Copy { cfg, dest, .. } | InstallMethod::Link { cfg, dest, .. } => {
-                cfg.toolchain_path(&(*dest).clone().into())
+                cfg.ref_path(&(*dest).clone().into())
             }
             InstallMethod::Dist(DistOptions {
                 cfg,
                 toolchain: desc,
                 ..
-            }) => cfg.toolchain_path(&(*desc).clone().into()),
+            }) => cfg.ref_path(&(*desc).clone().into()),
         }
     }
 }
