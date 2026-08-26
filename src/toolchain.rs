@@ -109,7 +109,7 @@ impl<'a> Toolchain<'a> {
     }
 
     pub(crate) fn new(cfg: &'a Cfg<'a>, name: LocalToolchainName) -> Result<Self, RustupError> {
-        let path = cfg.toolchain_path(&name);
+        let path = cfg.ref_path(&name);
         if !Toolchain::exists(cfg, &name)? {
             return Err(match name {
                 LocalToolchainName::Named(name) => {
@@ -125,7 +125,7 @@ impl<'a> Toolchain<'a> {
     /// Ok(True) if the toolchain exists. Ok(False) if the toolchain or its
     /// containing directory don't exist. Err otherwise.
     pub(crate) fn exists(cfg: &Cfg<'_>, name: &LocalToolchainName) -> Result<bool, RustupError> {
-        let path = cfg.toolchain_path(name);
+        let path = cfg.ref_path(name);
         // toolchain validation should have prevented a situation where there is
         // no base dir, but defensive programming is defensive.
         let parent = path
@@ -544,7 +544,7 @@ impl<'a> Toolchain<'a> {
     ///
     ///
     pub fn ensure_removed(cfg: &Cfg<'_>, name: LocalToolchainName) -> anyhow::Result<()> {
-        let path = cfg.toolchain_path(&name);
+        let path = cfg.ref_path(&name);
         let name = match name {
             LocalToolchainName::Named(t) => t,
             LocalToolchainName::Path(_) => bail!("Cannot remove a path based toolchain"),

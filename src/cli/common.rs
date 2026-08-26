@@ -164,8 +164,8 @@ fn show_channel_updates(
 ) -> anyhow::Result<()> {
     let data = updates.into_iter().map(|(pkg, result)| {
         let (banner, style) = match &result {
-            Ok(UpdateStatus::Installed) => ("installed", UPDATE_ADDED),
-            Ok(UpdateStatus::Updated(_)) => ("updated", UPDATE_UPGRADED),
+            Ok(UpdateStatus::Installed { .. }) => ("installed", UPDATE_ADDED),
+            Ok(UpdateStatus::Updated { .. }) => ("updated", UPDATE_UPGRADED),
             Ok(UpdateStatus::Unchanged) => ("unchanged", UPDATE_UNCHANGED),
             Err(_) => ("update failed", ERROR),
         };
@@ -173,14 +173,16 @@ fn show_channel_updates(
         let (previous_version, version) = match &pkg {
             PackageUpdate::Rustup => {
                 let previous_version: Option<String> = match result {
-                    Ok(UpdateStatus::Installed) | Ok(UpdateStatus::Unchanged) | Err(_) => None,
+                    Ok(UpdateStatus::Installed { .. }) | Ok(UpdateStatus::Unchanged) | Err(_) => {
+                        None
+                    }
                     _ => Some(env!("CARGO_PKG_VERSION").into()),
                 };
                 let version = match result {
-                    Err(_) | Ok(UpdateStatus::Installed) | Ok(UpdateStatus::Unchanged) => {
+                    Err(_) | Ok(UpdateStatus::Installed { .. }) | Ok(UpdateStatus::Unchanged) => {
                         env!("CARGO_PKG_VERSION").into()
                     }
-                    Ok(UpdateStatus::Updated(v)) => v,
+                    Ok(UpdateStatus::Updated { from: v, .. }) => v,
                 };
                 (previous_version, version)
             }
@@ -193,8 +195,10 @@ fn show_channel_updates(
                     Err(_) => String::from("(toolchain not installed)"),
                 };
                 let previous_version: Option<String> = match result {
-                    Ok(UpdateStatus::Installed) | Ok(UpdateStatus::Unchanged) | Err(_) => None,
-                    Ok(UpdateStatus::Updated(v)) => Some(v),
+                    Ok(UpdateStatus::Installed { .. }) | Ok(UpdateStatus::Unchanged) | Err(_) => {
+                        None
+                    }
+                    Ok(UpdateStatus::Updated { from: v, .. }) => Some(v),
                 };
                 (previous_version, version)
             }
@@ -257,7 +261,9 @@ pub(crate) async fn update_all_channels(
         };
 
         match &result {
-            Ok(UpdateStatus::Updated(_)) | Ok(UpdateStatus::Installed) => has_update = true,
+            Ok(UpdateStatus::Updated { .. }) | Ok(UpdateStatus::Installed { .. }) => {
+                has_update = true
+            }
             Err(e) => {
                 has_update_error = true;
                 report_error(e, cfg.process);
@@ -372,7 +378,7 @@ pub(crate) async fn list_toolchains(
             (false, false) => "",
         };
 
-        let toolchain_path = cfg.toolchains_dir.join(toolchain);
+        let toolchain_path = cfg.refs_dir.join(toolchain);
         let toolchain_meta = fs::symlink_metadata(&toolchain_path)?;
         let toolchain_path = if verbose {
             if toolchain_meta.is_dir() {

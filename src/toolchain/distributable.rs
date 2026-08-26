@@ -18,8 +18,8 @@ use crate::{
         DistOptions, PartialToolchainDesc, ToolchainDesc,
         config::Config,
         download::DownloadCfg,
-        manifest::{Component, ComponentStatus, Manifest, ManifestWithHash},
-        manifestation::{Changes, Manifestation},
+        manifest::{Component, ComponentStatus, Hashed, Manifest},
+        manifestation::{Changes, Manifestation, UpdateStatus},
         prefix::InstallPrefix,
     },
     errors::UnknownComponentInfo,
@@ -66,7 +66,7 @@ impl<'a> DistributableToolchain<'a> {
     pub(crate) async fn add_components(
         &self,
         components: impl IntoIterator<Item = anyhow::Result<Component>>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<UpdateStatus> {
         let manifestation = self.get_manifestation()?;
         let manifest = self.get_manifest()?;
 
@@ -133,6 +133,7 @@ impl<'a> DistributableToolchain<'a> {
         }
 
         let changes = Changes {
+            desc: &self.desc,
             explicit_add_components: validated_components,
             remove_components: vec![],
         };
@@ -140,9 +141,7 @@ impl<'a> DistributableToolchain<'a> {
         let download_cfg = DownloadCfg::new(self.toolchain.cfg);
         manifestation
             .update(manifest, changes, false, &download_cfg, &self.desc, false)
-            .await?;
-
-        Ok(())
+            .await
     }
 
     pub(crate) fn components(&self) -> anyhow::Result<Vec<ComponentStatus>> {
@@ -434,6 +433,7 @@ impl<'a> DistributableToolchain<'a> {
         }
 
         let changes = Changes {
+            desc: &self.desc,
             explicit_add_components: vec![],
             remove_components: renamed_components,
         };
@@ -454,7 +454,7 @@ impl<'a> DistributableToolchain<'a> {
         Ok(())
     }
 
-    pub async fn fetch_dist_manifest(&self) -> anyhow::Result<Option<ManifestWithHash>> {
+    pub async fn fetch_dist_manifest(&self) -> anyhow::Result<Option<Hashed<Manifest>>> {
         let prefix = InstallPrefix::from(self.toolchain.path());
         let update_hash = if prefix.dist_manifest().is_some() {
             Some(self.toolchain.cfg.get_hash_file(&self.desc, false)?)
