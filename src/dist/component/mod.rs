@@ -11,6 +11,10 @@ mod transaction;
 mod package;
 // The representation of *installed* components, and uninstallation
 mod components;
+// The representation of an object and its identification-related semantics.
+mod obj;
+// The per-object FS locks.
+mod lock;
 
 #[cfg(test)]
 mod tests;
