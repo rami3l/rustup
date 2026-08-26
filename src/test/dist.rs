@@ -6,6 +6,7 @@ use std::{
     fs::{self, File},
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    str::FromStr as _,
     sync::{Arc, LazyLock, Mutex},
 };
 
@@ -17,18 +18,18 @@ use super::{
 };
 use crate::{
     dist::{
-        DEFAULT_DIST_SERVER, Profile, TargetTuple,
-        component::{Components, DirectoryPackage, Transaction},
+        DEFAULT_DIST_SERVER, Profile, TargetTuple, ToolchainDesc,
+        component::{Components, DirectoryPackage, ObjLocker, Transaction},
         manifest::{
             Component, CompressionKind, HashedBinary, Manifest, ManifestVersion, Package,
             PackageTargets, Renamed, TargetedPackage,
         },
-        prefix::InstallPrefix,
+        manifestation::Changes,
+        prefix::{InstallPrefix, InstallPrefixWithOrigin},
         temp,
     },
     process::TestProcess,
 };
-
 pub struct DistContext {
     pub pkg_dir: tempfile::TempDir,
     pub inst_dir: tempfile::TempDir,
@@ -63,18 +64,31 @@ impl DistContext {
     }
 
     pub fn start(&self) -> anyhow::Result<(Transaction, Components, DirectoryPackage<&Path>)> {
-        let tx = self.transaction();
+        let tx = self.transaction()?;
         let components = Components::open(self.prefix.clone())?;
         let pkg = DirectoryPackage::new(self.pkg_dir.path(), true)?;
         Ok((tx, components, pkg))
     }
 
-    pub fn transaction(&self) -> Transaction {
-        Transaction::new(
-            self.prefix.clone(),
+    pub fn transaction(&self) -> anyhow::Result<Transaction> {
+        let toolchain = ToolchainDesc::from_str("stable-x86_64-unknown-linux-gnu")?;
+        let process = &self.tp.process;
+        let rustup_home = process.rustup_home()?;
+        // TODO: Use a proper API for `process` after platform dir lands.
+        let heap_dir = rustup_home.join("heap");
+        let ref_ = rustup_home.join("toolchains").join(toolchain.to_string());
+
+        let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
+        let tx = Transaction::new(
+            ref_,
+            InstallPrefixWithOrigin::new(orig.as_ref(), &Changes::empty(&toolchain), &heap_dir),
             self.cx.clone(),
-            self.tp.process.permit_copy_rename(),
-        )
+            &heap_dir,
+            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
+            &ObjLocker::new(&rustup_home.join("locks"))?,
+            process.permit_copy_rename(),
+        )?;
+        Ok(tx)
     }
 }
 

@@ -131,6 +131,7 @@ impl<'a> DistributableToolchain<'a> {
         }
 
         let changes = Changes {
+            desc: &self.desc,
             explicit_add_components: validated_components,
             remove_components: vec![],
         };
@@ -427,6 +428,7 @@ impl<'a> DistributableToolchain<'a> {
         }
 
         let changes = Changes {
+            desc: &self.desc,
             explicit_add_components: vec![],
             remove_components: vec![component],
         };

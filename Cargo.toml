@@ -41,6 +41,7 @@ test = ["dep:snapbox", "dep:walkdir", "clap-cargo/testing_colors"]
 anstream = "1"
 anstyle = "1.0.11"
 anyhow = "1.0.69"
+base-x = "0.3.0"
 cc = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive", "wrap_help", "string"] }
@@ -99,6 +100,7 @@ tracing = "0.1"
 tracing-log = "0.2"
 tracing-opentelemetry = { version = "0.33", optional = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+twox-hash = "2.1.4"
 unicode-security = "0.1"
 url = "2.4"
 wait-timeout = "0.2"

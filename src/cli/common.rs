@@ -371,7 +371,7 @@ pub(crate) async fn list_toolchains(
             (false, false) => "",
         };
 
-        let toolchain_path = cfg.toolchains_dir.join(toolchain);
+        let toolchain_path = cfg.refs_dir.join(toolchain);
         let toolchain_meta = fs::symlink_metadata(&toolchain_path)?;
         let toolchain_path = if verbose {
             if toolchain_meta.is_dir() {
