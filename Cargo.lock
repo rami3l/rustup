@@ -172,6 +172,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base-x"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c88e1890b4717f1cce48d42b0836d6b9c6c96136f5ab8922ae4626f4eaf69638"
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1166,7 +1172,7 @@ version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82cb6a9f675da968c63b6208c641b9dca58fc0133ae53375736b1767b0cab8bd"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2047,6 +2053,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "anyhow",
+ "base-x",
  "cc",
  "chrono",
  "clap",
