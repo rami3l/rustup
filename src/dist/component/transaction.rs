@@ -16,7 +16,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing::{error, info};
 
-use crate::dist::prefix::InstallPrefix;
+use crate::dist::prefix::{InstallPrefix, InstallPrefixWithOrigin};
 use crate::dist::temp;
 use crate::errors::RustupError;
 use crate::utils;
@@ -48,8 +48,7 @@ pub struct Transaction {
 impl Transaction {
     pub fn new(
         ref_: PathBuf,
-        prefix: InstallPrefix,
-        orig_prefix: Option<&InstallPrefix>,
+        prefix: InstallPrefixWithOrigin<'_>,
         tmp_cx: Arc<temp::Context>,
         locker: &ObjLocker,
         permit_copy_rename: bool,
@@ -58,12 +57,13 @@ impl Transaction {
             .file_name()
             .context("when extracting base name from reference path")?;
         let obj = prefix
+            .dest
             .path()
             .file_name()
             .context("when extracting base name from installation prefix")?;
 
         let tmp_obj = tmp_cx.new_directory_named(obj)?;
-        if let Some(orig) = orig_prefix {
+        if let Some(orig) = prefix.orig {
             utils::copy_dir(orig.path(), &tmp_obj)?
         }
 
@@ -71,7 +71,7 @@ impl Transaction {
             lock: Some(locker.lock(obj)?),
             tmp_obj: tmp_cx.new_directory_named(obj)?,
             tmp_ref: tmp_cx.new_file_named(ref_name)?,
-            prefix,
+            prefix: prefix.dest,
             ref_,
             tmp_cx,
             committed: false,
@@ -103,7 +103,6 @@ impl Transaction {
     /// `File` that may be used to subsequently write the
     /// contents.
     pub fn add_file(&mut self, component: &str, relpath: PathBuf) -> Result<File> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         File::create(&abs_path).with_context(|| {
             format!(
@@ -115,7 +114,6 @@ impl Transaction {
 
     /// Copy a file to a relative path of the install prefix.
     pub fn copy_file(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         utils::copy_file(src, &abs_path).with_context(|| {
             format!(
@@ -127,7 +125,6 @@ impl Transaction {
 
     /// Recursively copy a directory to a relative path of the install prefix.
     pub fn copy_dir(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         utils::copy_dir(src, &abs_path).with_context(|| {
             format!(
@@ -139,7 +136,6 @@ impl Transaction {
 
     /// Remove a file from a relative path to the install prefix.
     pub fn remove_file(&mut self, component: &str, relpath: PathBuf) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         if !utils::path_exists(&abs_path) {
             return Err(RustupError::ComponentMissingFile {
@@ -154,7 +150,6 @@ impl Transaction {
     /// Recursively remove a directory from a relative path of the
     /// install prefix.
     pub fn remove_dir(&mut self, component: &str, relpath: PathBuf) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         if !utils::path_exists(&abs_path) {
             return Err(RustupError::ComponentMissingDir {
@@ -175,7 +170,6 @@ impl Transaction {
     /// Create a new file with string contents at a relative path to
     /// the install prefix.
     pub fn write_file(&mut self, component: &str, relpath: PathBuf, content: String) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         let mut file = File::create(&abs_path).with_context(|| {
             format!(
@@ -194,7 +188,6 @@ impl Transaction {
         relpath: PathBuf,
         src: &Path,
     ) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         utils::rename("component", src, &abs_path, self.permit_copy_rename).with_context(|| {
             format!(
@@ -207,7 +200,6 @@ impl Transaction {
 
     /// Recursively move a directory to a relative path of the install prefix.
     pub(crate) fn move_dir(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
-        assert!(relpath.is_relative());
         let abs_path = self.dest_abs_path(&relpath)?;
         utils::rename("component", src, &abs_path, self.permit_copy_rename).with_context(|| {
             format!(
@@ -217,7 +209,21 @@ impl Transaction {
         })?;
         Ok(())
     }
-    fn dest_abs_path(&self, relpath: &Path) -> Result<PathBuf> {
+
+    /// Converts a path relative to this [`Transaction`]'s [`InstallPrefix`].
+    ///
+    /// # Note
+    ///
+    /// This function is used to map the input relative path to an absolute path in the
+    /// corresponding temporary directory. It should be systematically used when an active
+    /// transaction is in progress, to avoid writing files directly to the final installation
+    /// prefix.
+    ///
+    /// However, before using this function, please consider whether you can use other methods of
+    /// [`InstallPrefix`] that wrap this function instead, as we have provided some convenience
+    /// methods for trivial operations to avoid having to call this function directly.
+    pub(crate) fn dest_abs_path(&self, relpath: &Path) -> Result<PathBuf> {
+        assert!(relpath.is_relative());
         let abs_path = self.tmp_obj.join(relpath);
         if let Some(p) = abs_path.parent() {
             utils::ensure_dir_exists("component", p)?;

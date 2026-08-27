@@ -13,10 +13,22 @@ const REL_MANIFEST_DIR: &str = match std::path::MAIN_SEPARATOR {
 static V1_COMMON_COMPONENT_LIST: &[&str] = &["cargo", "rustc", "rust-docs"];
 pub(crate) const DIST_MANIFEST: &str = "multirust-channel-manifest.toml";
 
+/// Describes the target of an installation.
+///
+/// This struct is composed of a final destination path and an original source path. When the
+/// installation is a modification of an existing installation, the origin source path corresponds
+/// to the path of that installation. Otherwise, the origin source path is `None`.
+#[derive(Clone, Debug)]
+pub struct InstallPrefixWithOrigin<'a> {
+    pub dest: InstallPrefix,
+    pub orig: Option<&'a InstallPrefix>,
+}
+
 #[derive(Clone, Debug)]
 pub struct InstallPrefix {
     path: PathBuf,
 }
+
 impl InstallPrefix {
     pub fn path(&self) -> &Path {
         &self.path
