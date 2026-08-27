@@ -25,11 +25,11 @@ use crate::{
     diskio::{Executor, IO_CHUNK_SIZE, get_executor, unpack_ram},
     dist::{
         DEFAULT_DIST_SERVER, Profile, TargetTuple, ToolchainDesc,
-        component::{Components, DirectoryPackage, Transaction},
+        component::{Components, DirectoryPackage, ObjLocker, Transaction},
         config::Config,
         download::{DownloadCfg, DownloadStatus, File},
         manifest::{Component, CompressionKind, HashedBinary, Manifest},
-        prefix::{DIST_MANIFEST, InstallPrefix},
+        prefix::{DIST_MANIFEST, InstallPrefix, InstallPrefixWithOrigin},
         temp,
     },
     errors::RustupError,
@@ -51,6 +51,10 @@ pub struct Changes {
 }
 
 impl Changes {
+    pub fn is_empty(&self) -> bool {
+        self.explicit_add_components.is_empty() && self.remove_components.is_empty()
+    }
+
     fn iter_add_components(&self) -> impl Iterator<Item = &Component> {
         self.explicit_add_components.iter()
     }
@@ -204,12 +208,19 @@ impl Manifestation {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_RETRIES);
 
+        let rustup_home = download_cfg.process.rustup_home()?;
+        // TODO: Use a proper API for `process` after platform dir lands.
+        let ref_ = rustup_home.join("toolchain").join(toolchain.to_string());
+
         // Begin transaction
         let mut tx = Transaction::new(
-            prefix.clone(),
+            ref_,
+            InstallPrefixWithOrigin::new(&prefix, &changes),
             download_cfg.tmp_cx.clone(),
+            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
+            &ObjLocker::new(&rustup_home.join("locks"))?,
             download_cfg.permit_copy_rename,
-        );
+        )?;
 
         // If the previous installation was from a v1 manifest we need
         // to uninstall it first.

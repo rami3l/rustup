@@ -1,4 +1,6 @@
 pub use self::components::*;
+pub use self::lock::*;
+pub use self::obj::*;
 pub use self::package::*;
 /// An interpreter for the rust-installer [1] installation format.
 ///
