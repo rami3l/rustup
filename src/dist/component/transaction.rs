@@ -64,6 +64,10 @@ impl Transaction {
 
         let lock = locker.lock(obj)?;
 
+        // TODO: From now on, a full upgrade should never involve removing all its components.
+        // Instead, `prefix.orig` should be set straight to `None`. Essentially, a full upgrade will
+        // be disqualified from being a "modification".
+
         let tmp_obj = tmp_cx.new_directory_named(obj)?;
         if let Some(orig) = prefix.orig {
             utils::copy_dir(orig.path(), &tmp_obj)?

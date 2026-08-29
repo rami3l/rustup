@@ -49,13 +49,6 @@ impl<'a> InstallPrefixWithOrigin<'a> {
     /// When flipping the active partition, if the original prefix base name doesn't match the above
     /// format, we consider the current active partition to be `a`.
     pub fn new(orig: &'a InstallPrefix, changes: &Changes<'_>) -> Self {
-        if changes.is_empty() {
-            return Self {
-                orig: Some(orig),
-                dest: orig.clone(),
-            };
-        }
-
         // NOTE: The below is intentionally an illeagal xxhash mid part because `i` and `o` are not
         // in the alphabet.
         let sep = "-abpartitioned-";
@@ -65,6 +58,10 @@ impl<'a> InstallPrefixWithOrigin<'a> {
             .expect("installation prefix should have a base name")
             .to_string_lossy();
 
+        // TODO: When real content addressing is implemented, a special scheme should be used for
+        // the address formats of toolchains on v1 manifests because the latter don't have the
+        // notion of component sets. Now we are always using A/B partitioning so this doesn't
+        // matter.
         let (name, partition) = match orig_obj.rsplit_once(sep) {
             Some((n, "a")) => (n, "b"),
             Some((n, _)) => (n, "a"),

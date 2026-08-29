@@ -52,6 +52,13 @@ pub struct Changes<'a> {
 }
 
 impl Changes<'_> {
+    pub fn empty(desc: &ToolchainDesc) -> Changes<'_> {
+        Changes {
+            desc,
+            explicit_add_components: vec![],
+            remove_components: vec![],
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.explicit_add_components.is_empty() && self.remove_components.is_empty()
     }
@@ -334,7 +341,7 @@ impl Manifestation {
         )?;
 
         // End transaction
-        tx.commit();
+        tx.commit()?;
 
         Ok(UpdateStatus::Changed)
     }
@@ -405,6 +412,7 @@ impl Manifestation {
         &self,
         new_manifest: &[String],
         update_hash: &Path,
+        toolchain: &ToolchainDesc,
         dl_cfg: &DownloadCfg<'_>,
     ) -> Result<Option<String>> {
         // If there's already a v2 installation then something has gone wrong
@@ -441,8 +449,19 @@ impl Manifestation {
         let prefix = self.installation.prefix();
         info!("installing component rust");
 
+        let rustup_home = dl_cfg.process.rustup_home()?;
+        // TODO: Use a proper API for `process` after platform dir lands.
+        let ref_ = rustup_home.join("toolchain").join(toolchain.to_string());
+
         // Begin transaction
-        let mut tx = Transaction::new(prefix, dl_cfg.tmp_cx.clone(), dl_cfg.permit_copy_rename);
+        let mut tx = Transaction::new(
+            ref_,
+            InstallPrefixWithOrigin::new(&prefix, &Changes::empty(toolchain)),
+            dl_cfg.tmp_cx.clone(),
+            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
+            &ObjLocker::new(&rustup_home.join("locks"))?,
+            dl_cfg.permit_copy_rename,
+        )?;
 
         // Uninstall components
         let components = self.installation.list()?;
@@ -464,7 +483,7 @@ impl Manifestation {
         }
 
         // End transaction
-        tx.commit();
+        tx.commit()?;
 
         Ok(Some(installer_hash))
     }
