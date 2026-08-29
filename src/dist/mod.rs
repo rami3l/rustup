@@ -1170,6 +1170,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
                 explicit_add_components.sort();
 
                 let changes = Changes {
+                    desc: toolchain,
                     explicit_add_components,
                     remove_components: Vec::new(),
                 };

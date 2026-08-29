@@ -45,12 +45,13 @@ pub struct Manifestation {
 }
 
 #[derive(Debug)]
-pub struct Changes {
+pub struct Changes<'a> {
+    pub desc: &'a ToolchainDesc,
     pub explicit_add_components: Vec<Component>,
     pub remove_components: Vec<Component>,
 }
 
-impl Changes {
+impl Changes<'_> {
     pub fn is_empty(&self) -> bool {
         self.explicit_add_components.is_empty() && self.remove_components.is_empty()
     }
@@ -120,7 +121,7 @@ impl Manifestation {
     pub async fn update(
         self,
         new_manifest: Manifest,
-        changes: Changes,
+        changes: Changes<'_>,
         force_update: bool,
         download_cfg: &DownloadCfg<'_>,
         toolchain: &ToolchainDesc,
@@ -585,7 +586,7 @@ impl Update {
     fn new(
         manifestation: &Manifestation,
         new_manifest: &Manifest,
-        changes: &Changes,
+        changes: &Changes<'_>,
         config: &Option<Config>,
     ) -> Result<Self> {
         // The package to install.

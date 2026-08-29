@@ -40,25 +40,39 @@ impl<'a> InstallPrefixWithOrigin<'a> {
     /// one of the following:
     ///
     /// ```
-    /// <ref-short-name>-abpart1t10ned-a
-    /// <ref-short-name>-abpart1t10ned-b
+    /// <ref-short-name>-abpartitioned-a
+    /// <ref-short-name>-abpartitioned-b
     /// ```
     ///
     /// ... where `ref-short-name` looks like `stableaarch64appledarwin`
     ///
     /// When flipping the active partition, if the original prefix base name doesn't match the above
     /// format, we consider the current active partition to be `a`.
-    pub fn new(orig: &'a InstallPrefix, changes: &Changes) -> Self {
+    pub fn new(orig: &'a InstallPrefix, changes: &Changes<'_>) -> Self {
         if changes.is_empty() {
             return Self {
                 orig: Some(orig),
                 dest: orig.clone(),
             };
         }
-        let dest = todo!("read the old prefix and decide");
+
+        // NOTE: The below is intentionally an illeagal xxhash mid part because `i` and `o` are not
+        // in the alphabet.
+        let sep = "-abpartitioned-";
+        let orig_obj = orig
+            .path
+            .file_name()
+            .expect("installation prefix should have a base name")
+            .to_string_lossy();
+
+        let (name, partition) = match orig_obj.rsplit_once(sep) {
+            Some((n, "a")) => (n, "b"),
+            Some((n, _)) => (n, "a"),
+            None => (&*changes.desc.to_string().replace(['-', '_'], ""), "b"),
+        };
         Self {
             orig: Some(orig),
-            dest,
+            dest: InstallPrefix::from(orig.path().with_file_name([name, partition].join(sep))),
         }
     }
 }
