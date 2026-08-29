@@ -122,7 +122,7 @@ impl Context {
         debug!(name = "temp", path = %temp_dir.display(), "creating named directory");
         fs::create_dir(&temp_dir)
             .with_context(|| CreatingError::Directory(PathBuf::from(&temp_dir)))?;
-        return Ok(Dir { path: temp_dir });
+        Ok(Dir { path: temp_dir })
     }
 
     pub fn new_file(&self) -> Result<File> {
@@ -155,7 +155,7 @@ impl Context {
         debug!(path = %temp_file.display(), "creating temp file");
         fs::File::create(&temp_file)
             .with_context(|| CreatingError::File(PathBuf::from(&temp_file)))?;
-        return Ok(File { path: temp_file });
+        Ok(File { path: temp_file })
     }
 
     pub(crate) fn clean(&self) {

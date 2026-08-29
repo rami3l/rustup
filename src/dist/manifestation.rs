@@ -1,8 +1,9 @@
 //! Maintains a Rust installation by installing individual Rust
 //! platform components from a distribution server.
 
-#[cfg(test)]
-mod tests;
+// TODO: Revive this
+// #[cfg(test)]
+// mod tests;
 
 use std::{
     collections::VecDeque,

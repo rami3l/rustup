@@ -54,7 +54,7 @@ impl Components {
             Ok(None)
         }
     }
-    fn write_version(&self, tx: &mut Transaction) -> Result<()> {
+    fn write_version(&self, tx: &Transaction) -> Result<()> {
         let abs_path = tx.dest_abs_path(&self.prefix.rel_manifest_file(VERSION_FILE))?;
         utils::write_file(VERSION_FILE, &abs_path, INSTALLER_VERSION)?;
 
@@ -144,7 +144,7 @@ impl ComponentBuilder {
         utils::append_file("components", &abs_path, &self.name)?;
 
         // Drop in the version file for future use
-        self.components.write_version(&mut self.tx)?;
+        self.components.write_version(&self.tx)?;
 
         Ok(self.tx)
     }

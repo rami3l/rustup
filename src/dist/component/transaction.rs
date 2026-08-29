@@ -65,8 +65,8 @@ impl Transaction {
         let lock = locker.lock(obj)?;
 
         // TODO: From now on, a full upgrade should never involve removing all its components.
-        // Instead, `prefix.orig` should be set straight to `None`. Essentially, a full upgrade will
-        // be disqualified from being a "modification".
+        // Instead, `prefix.orig` should be set straight to `None`. Essentially, a full upgrade or
+        // full uninstallation will be disqualified from being a "modification".
 
         let tmp_obj = tmp_cx.new_directory_named(obj)?;
         if let Some(orig) = prefix.orig {
@@ -191,12 +191,7 @@ impl Transaction {
     }
 
     /// Move a file to a relative path of the install prefix.
-    pub(crate) fn move_file(
-        &mut self,
-        component: &str,
-        relpath: PathBuf,
-        src: &Path,
-    ) -> Result<()> {
+    pub(crate) fn move_file(&self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
         utils::rename("component", src, &abs_path, self.permit_copy_rename).with_context(|| {
             format!(
@@ -208,7 +203,7 @@ impl Transaction {
     }
 
     /// Recursively move a directory to a relative path of the install prefix.
-    pub(crate) fn move_dir(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
+    pub(crate) fn move_dir(&self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
         utils::rename("component", src, &abs_path, self.permit_copy_rename).with_context(|| {
             format!(
