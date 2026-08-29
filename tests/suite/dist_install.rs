@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::Write;
 
-use rustup::dist::component::{Components, DirectoryPackage, Transaction};
-use rustup::dist::prefix::InstallPrefix;
+use rustup::dist::component::{Components, DirectoryPackage, ObjLocker, Transaction};
+use rustup::dist::prefix::{AbAddressing, AddressingStrategy, InstallPrefix};
 use rustup::test::{DistContext, MockComponentBuilder, MockFile, MockInstallerBuilder};
 use rustup::utils;
 
@@ -101,14 +101,10 @@ fn basic_install() {
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
     tx.commit();
 
-    assert!(utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(utils::path_exists(cx.inst_dir.path().join("lib/bar")));
-    assert!(utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc1")
-    ));
-    assert!(utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc2")
-    ));
+    assert!(utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(utils::path_exists(cx.prefix.path().join("lib/bar")));
+    assert!(utils::path_exists(cx.prefix.path().join("doc/stuff/doc1")));
+    assert!(utils::path_exists(cx.prefix.path().join("doc/stuff/doc2")));
 
     assert!(components.find("mycomponent").unwrap().is_some());
 }
@@ -134,8 +130,8 @@ fn multiple_component_install() {
     let tx = pkg.install(&components, "mycomponent2", None, tx).unwrap();
     tx.commit();
 
-    assert!(utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(utils::path_exists(cx.inst_dir.path().join("lib/bar")));
+    assert!(utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(utils::path_exists(cx.prefix.path().join("lib/bar")));
 
     assert!(components.find("mycomponent").unwrap().is_some());
     assert!(components.find("mycomponent2").unwrap().is_some());
@@ -167,25 +163,28 @@ fn uninstall() {
     tx.commit();
 
     // Now uninstall
+    let addressed = AbAddressing::new(cx.inst_dir.path().join("heap"))
+        .address(&cx.prefix)
+        .unwrap();
+    let locker = ObjLocker::new(&cx.inst_dir.path().join("locks")).unwrap();
     let mut tx = Transaction::new(
-        cx.prefix.clone(),
+        cx.prefix.path().to_owned(),
+        addressed,
         cx.cx.clone(),
+        &locker,
         cx.tp.process.permit_copy_rename(),
-    );
+    )
+    .unwrap();
     for component in components.list().unwrap() {
         tx = component.uninstall(tx).unwrap();
     }
     tx.commit();
 
-    assert!(!utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(!utils::path_exists(cx.inst_dir.path().join("lib/bar")));
-    assert!(!utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc1")
-    ));
-    assert!(!utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc2")
-    ));
-    assert!(!utils::path_exists(cx.inst_dir.path().join("doc/stuff")));
+    assert!(!utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(!utils::path_exists(cx.prefix.path().join("lib/bar")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff/doc1")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff/doc2")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff")));
     assert!(components.find("mycomponent").unwrap().is_none());
     assert!(components.find("mycomponent2").unwrap().is_none());
 }

@@ -445,7 +445,7 @@ impl TestContext {
         server: MockDistServer,
         url: Url,
         comps: Compressions,
-        env: HashMap<String, String>,
+        mut env: HashMap<String, String>,
     ) -> Self {
         server.write(
             &[MockManifestVersion::V2],
@@ -456,13 +456,23 @@ impl TestContext {
         let prefix_tempdir = tempfile::Builder::new().prefix("rustup").tempdir().unwrap();
         let work_tempdir = tempfile::Builder::new().prefix("rustup").tempdir().unwrap();
         let toolchain = ToolchainDesc::from_str("nightly-x86_64-apple-darwin").unwrap();
-        let prefix = InstallPrefix::from(prefix_tempdir.path());
+        let heap = prefix_tempdir.path().join("heap");
+        let toolchains = prefix_tempdir.path().join("toolchains");
+        let reference = toolchains.join(toolchain.to_string());
+        fs::create_dir_all(heap.join(format!("{}-A", toolchain))).unwrap();
+        fs::create_dir_all(&toolchains).unwrap();
+        utils::symlink_dir(&heap.join(format!("{}-A", toolchain)), &reference).unwrap();
+        let prefix = InstallPrefix::from(reference);
+        env.insert(
+            "RUSTUP_HOME".to_owned(),
+            prefix_tempdir.path().to_string_lossy().into_owned(),
+        );
         let tp = TestProcess::new(env::current_dir().unwrap(), &["rustup"], env, "");
 
         Self {
             url,
             toolchain,
-            download_dir: prefix.path().join("downloads"),
+            download_dir: prefix_tempdir.path().join("downloads"),
             prefix,
             tp,
             tmp_cx: Arc::new(temp::Context::new(
@@ -528,6 +538,7 @@ impl TestContext {
         manifestation.uninstall(
             &manifest,
             self.tmp_cx.clone(),
+            &self.tp.process,
             self.tp.process.permit_copy_rename(),
         )?;
 

@@ -1,4 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use anyhow::Result;
 
 use crate::utils;
 
@@ -19,9 +24,67 @@ pub(crate) const DIST_MANIFEST: &str = "multirust-channel-manifest.toml";
 /// installation is a modification of an existing installation, the origin source path corresponds
 /// to the path of that installation. Otherwise, the origin source path is `None`.
 #[derive(Clone, Debug)]
-pub struct InstallPrefixWithOrigin<'a> {
+pub struct InstallPrefixWithOrigin {
     pub dest: InstallPrefix,
-    pub orig: Option<&'a InstallPrefix>,
+    pub orig: Option<InstallPrefix>,
+}
+
+pub trait AddressingStrategy {
+    fn address(&self, reference: &InstallPrefix) -> Result<InstallPrefixWithOrigin>;
+}
+
+#[derive(Clone, Debug)]
+pub struct AbAddressing {
+    heap: PathBuf,
+}
+
+impl AbAddressing {
+    pub fn new(heap: PathBuf) -> Self {
+        Self { heap }
+    }
+
+    fn partition(reference: &InstallPrefix) -> Option<&'static str> {
+        let target = fs::read_link(reference.path()).ok()?;
+        let name = target.file_name()?.to_str()?;
+        if name.ends_with("-A") {
+            Some("A")
+        } else if name.ends_with("-B") {
+            Some("B")
+        } else {
+            None
+        }
+    }
+}
+
+impl AddressingStrategy for AbAddressing {
+    fn address(&self, reference: &InstallPrefix) -> Result<InstallPrefixWithOrigin> {
+        let name = reference
+            .path()
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("reference path has no file name"))?;
+        let name = name
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("reference path is not valid Unicode"))?;
+        let partition = match Self::partition(reference) {
+            Some("A") => "B",
+            Some("B") | None => "A",
+            Some(_) => "A",
+        };
+        let dest = self.heap.join(format!("{name}-{partition}"));
+        utils::ensure_dir_exists("heap", &self.heap)?;
+        utils::ensure_dir_exists(
+            "toolchain reference",
+            reference
+                .path()
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("reference path has no parent"))?,
+        )?;
+
+        Ok(InstallPrefixWithOrigin {
+            dest: InstallPrefix::from(dest),
+            orig: reference.path().exists().then(|| reference.clone()),
+        })
+    }
 }
 
 #[derive(Clone, Debug)]

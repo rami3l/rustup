@@ -29,7 +29,7 @@ use crate::{
         config::Config,
         download::{DownloadCfg, DownloadStatus, File},
         manifest::{Component, CompressionKind, HashedBinary, Manifest},
-        prefix::{DIST_MANIFEST, InstallPrefix},
+        prefix::{AbAddressing, AddressingStrategy, DIST_MANIFEST, InstallPrefix},
         temp,
     },
     errors::RustupError,
@@ -125,7 +125,6 @@ impl Manifestation {
         // Some vars we're going to need a few times
         let prefix = self.installation.prefix();
         let rel_installed_manifest_path = prefix.rel_manifest_file(DIST_MANIFEST);
-        let installed_manifest_path = prefix.path().join(&rel_installed_manifest_path);
 
         // Create the lists of components needed for installation
         let config = self.read_config()?;
@@ -204,21 +203,8 @@ impl Manifestation {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_RETRIES);
 
-        let rustup_home = download_cfg.process.rustup_home()?;
-        // TODO: Use a proper API for `process` after platform dir lands.
-        let ref_ = rustup_home.join("toolchain").join(toolchain.to_string());
-
         // Begin transaction
-        let mut tx = Transaction::new(
-            ref_,
-            // TODO:: In stage 2 of process safe rustup, change this to a function of possibly
-            // `process` and `toolchain`. Something like `process.install_prefix(ref_name: &str, changeset: Changes)`
-            prefix,
-            download_cfg.tmp_cx.clone(),
-            // TODO: Again, use a proper wrapper on `process`.
-            &ObjLocker::new(&rustup_home.join("locks"))?,
-            download_cfg.permit_copy_rename,
-        )?;
+        let mut tx = self.transaction(download_cfg)?;
 
         // If the previous installation was from a v1 manifest we need
         // to uninstall it first.
@@ -307,8 +293,8 @@ impl Manifestation {
 
         // Install new distribution manifest
         let new_manifest_str = new_manifest.clone().stringify()?;
-        tx.modify_file(rel_installed_manifest_path)?;
-        utils::write_file("manifest", &installed_manifest_path, &new_manifest_str)?;
+        let manifest_path = tx.dest_abs_path(&rel_installed_manifest_path)?;
+        utils::write_file("manifest", &manifest_path, &new_manifest_str)?;
 
         // Write configuration.
         //
@@ -322,12 +308,11 @@ impl Manifestation {
         };
         let config_str = new_config.stringify()?;
         let rel_config_path = prefix.rel_manifest_file(CONFIG_FILE);
-        let config_path = prefix.path().join(&rel_config_path);
-        tx.modify_file(rel_config_path)?;
+        let config_path = tx.dest_abs_path(&rel_config_path)?;
         utils::write_file("dist config", &config_path, &config_str)?;
 
         // End transaction
-        tx.commit();
+        tx.commit()?;
 
         Ok(UpdateStatus::Changed)
     }
@@ -337,11 +322,21 @@ impl Manifestation {
         &self,
         manifest: &Manifest,
         tmp_cx: Arc<temp::Context>,
+        process: &crate::process::Process,
         permit_copy_rename: bool,
     ) -> Result<()> {
         let prefix = self.installation.prefix();
 
-        let mut tx = Transaction::new(prefix.clone(), tmp_cx, permit_copy_rename);
+        let rustup_home = process.rustup_home()?;
+        let addressed = AbAddressing::new(rustup_home.join("heap")).address(&prefix)?;
+        let locker = ObjLocker::new(&rustup_home.join("locks"))?;
+        let mut tx = Transaction::new(
+            prefix.path().to_owned(),
+            addressed,
+            tmp_cx,
+            &locker,
+            permit_copy_rename,
+        )?;
 
         // Read configuration and delete it
         let rel_config_path = prefix.rel_manifest_file(CONFIG_FILE);
@@ -356,7 +351,7 @@ impl Manifestation {
         for component in config.components {
             tx = self.uninstall_component(component, manifest, tx)?;
         }
-        tx.commit();
+        tx.commit()?;
 
         Ok(())
     }
@@ -460,11 +455,10 @@ impl Manifestation {
         };
         let (installer_file, installer_hash) = dl.unwrap();
 
-        let prefix = self.installation.prefix();
         info!("installing component rust");
 
         // Begin transaction
-        let mut tx = Transaction::new(prefix, dl_cfg.tmp_cx.clone(), dl_cfg.permit_copy_rename);
+        let mut tx = self.transaction(dl_cfg)?;
 
         // Uninstall components
         let components = self.installation.list()?;
@@ -486,9 +480,23 @@ impl Manifestation {
         }
 
         // End transaction
-        tx.commit();
+        tx.commit()?;
 
         Ok(Some(installer_hash))
+    }
+
+    fn transaction(&self, download_cfg: &DownloadCfg<'_>) -> Result<Transaction> {
+        let rustup_home = download_cfg.process.rustup_home()?;
+        let reference = self.installation.prefix();
+        let prefix = AbAddressing::new(rustup_home.join("heap")).address(&reference)?;
+        let locker = ObjLocker::new(&rustup_home.join("locks"))?;
+        Transaction::new(
+            reference.path().to_owned(),
+            prefix,
+            download_cfg.tmp_cx.clone(),
+            &locker,
+            download_cfg.permit_copy_rename,
+        )
     }
 
     // If the previous installation was from a v1 manifest, then it

@@ -14,15 +14,16 @@ use super::mock::MockInstallerBuilder;
 use super::{CROSS_ARCH1, CROSS_ARCH2, MULTI_ARCH1, create_hash, this_host_tuple};
 use crate::dist::{
     DEFAULT_DIST_SERVER, Profile, TargetTuple,
-    component::{Components, DirectoryPackage, Transaction},
+    component::{Components, DirectoryPackage, ObjLocker, Transaction},
     manifest::{
         Component, CompressionKind, HashedBinary, Manifest, ManifestVersion, Package,
         PackageTargets, Renamed, TargetedPackage,
     },
-    prefix::InstallPrefix,
+    prefix::{AbAddressing, AddressingStrategy, InstallPrefix},
     temp,
 };
 use crate::process::TestProcess;
+use crate::utils;
 
 pub struct DistContext {
     pub pkg_dir: tempfile::TempDir,
@@ -41,7 +42,13 @@ impl DistContext {
         }
 
         let inst_dir = tempfile::Builder::new().prefix("rustup").tempdir()?;
-        let prefix = InstallPrefix::from(inst_dir.path().to_owned());
+        let heap = inst_dir.path().join("heap");
+        let toolchains = inst_dir.path().join("toolchains");
+        let reference = toolchains.join("test");
+        fs::create_dir_all(heap.join("test-A"))?;
+        fs::create_dir_all(&toolchains)?;
+        utils::symlink_dir(&heap.join("test-A"), &reference)?;
+        let prefix = InstallPrefix::from(reference);
         let tmp_dir = tempfile::Builder::new().prefix("rustup").tempdir()?;
 
         Ok(Self {
@@ -65,11 +72,18 @@ impl DistContext {
     }
 
     pub fn transaction(&self) -> Transaction {
+        let addressed = AbAddressing::new(self.inst_dir.path().join("heap"))
+            .address(&self.prefix)
+            .unwrap();
+        let locker = ObjLocker::new(&self.inst_dir.path().join("locks")).unwrap();
         Transaction::new(
-            self.prefix.clone(),
+            self.prefix.path().to_owned(),
+            addressed,
             self.cx.clone(),
+            &locker,
             self.tp.process.permit_copy_rename(),
         )
+        .unwrap()
     }
 }
 

@@ -1,5 +1,4 @@
 use std::{
-    ffi::OsStr,
     fmt, fs, ops,
     path::{Path, PathBuf},
 };
@@ -64,7 +63,7 @@ impl ops::Deref for File {
 
 impl Drop for File {
     fn drop(&mut self) {
-        if raw::is_file(&self.path) {
+        if fs::symlink_metadata(&self.path).is_ok() {
             match fs::remove_file(&self.path) {
                 Ok(()) => debug!(path = %self.path.display(), "deleted temp file"),
                 Err(e) => {
@@ -114,17 +113,6 @@ impl Context {
         }
     }
 
-    pub(crate) fn new_directory_named(&self, name: &OsStr) -> Result<Dir> {
-        self.create_root()?;
-
-        let temp_dir = self.root_directory.join(name);
-
-        debug!(name = "temp", path = %temp_dir.display(), "creating named directory");
-        fs::create_dir(&temp_dir)
-            .with_context(|| CreatingError::Directory(PathBuf::from(&temp_dir)))?;
-        return Ok(Dir { path: temp_dir });
-    }
-
     pub fn new_file(&self) -> Result<File> {
         self.new_file_with_ext("", "")
     }
@@ -147,17 +135,6 @@ impl Context {
             }
         }
     }
-    pub(crate) fn new_file_named(&self, name: &OsStr) -> Result<File> {
-        self.create_root()?;
-
-        let temp_file = self.root_directory.join(name);
-
-        debug!(path = %temp_file.display(), "creating temp file");
-        fs::File::create(&temp_file)
-            .with_context(|| CreatingError::File(PathBuf::from(&temp_file)))?;
-        return Ok(File { path: temp_file });
-    }
-
     pub(crate) fn clean(&self) {
         utils::delete_dir_contents_following_links(&self.root_directory);
     }

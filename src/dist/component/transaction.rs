@@ -48,7 +48,7 @@ pub struct Transaction {
 impl Transaction {
     pub fn new(
         ref_: PathBuf,
-        prefix: InstallPrefixWithOrigin<'_>,
+        prefix: InstallPrefixWithOrigin,
         tmp_cx: Arc<temp::Context>,
         locker: &ObjLocker,
         permit_copy_rename: bool,
@@ -56,21 +56,23 @@ impl Transaction {
         let ref_name = ref_
             .file_name()
             .context("when extracting base name from reference path")?;
-        let obj = prefix
-            .dest
-            .path()
-            .file_name()
-            .context("when extracting base name from installation prefix")?;
-
-        let tmp_obj = tmp_cx.new_directory_named(obj)?;
-        if let Some(orig) = prefix.orig {
-            utils::copy_dir(orig.path(), &tmp_obj)?
+        let lock = locker.lock(ref_name)?;
+        if prefix.dest.path().exists() {
+            utils::remove_dir("stale toolchain object", prefix.dest.path())?;
         }
+        let tmp_obj = tmp_cx.new_directory()?;
+        if let Some(orig) = prefix.orig {
+            std::fs::remove_dir(&*tmp_obj)?;
+            utils::copy_dir(orig.path(), &tmp_obj)?;
+        }
+        let tmp_ref = tmp_cx.new_file()?;
+        std::fs::remove_file(&*tmp_ref)?;
+        utils::symlink_dir(prefix.dest.path(), &tmp_ref)?;
 
         Ok(Self {
-            lock: Some(locker.lock(obj)?),
-            tmp_obj: tmp_cx.new_directory_named(obj)?,
-            tmp_ref: tmp_cx.new_file_named(ref_name)?,
+            lock: Some(lock),
+            tmp_obj,
+            tmp_ref,
             prefix: prefix.dest,
             ref_,
             tmp_cx,
@@ -82,6 +84,9 @@ impl Transaction {
     /// Commit must be called for all successful transactions. If not
     /// called the transaction will be rolled back on drop.
     pub fn commit(mut self) -> Result<()> {
+        if let Some(parent) = self.prefix.path().parent() {
+            utils::ensure_dir_exists("toolchain heap", parent)?;
+        }
         utils::rename(
             "toolchain object",
             &self.tmp_obj,
@@ -99,11 +104,17 @@ impl Transaction {
         Ok(())
     }
 
+    /// Mark a path as modified in the copy-on-write object.
+    pub fn modify_file(&mut self, relpath: PathBuf) -> Result<()> {
+        self.dest_abs_path(&relpath).map(|_| ())
+    }
+
     /// Add a file at a relative path to the install prefix. Returns a
     /// `File` that may be used to subsequently write the
     /// contents.
     pub fn add_file(&mut self, component: &str, relpath: PathBuf) -> Result<File> {
         let abs_path = self.dest_abs_path(&relpath)?;
+        self.check_new_path(component, &relpath, &abs_path)?;
         File::create(&abs_path).with_context(|| {
             format!(
                 "error creating file '{}' of component '{component}'",
@@ -115,6 +126,7 @@ impl Transaction {
     /// Copy a file to a relative path of the install prefix.
     pub fn copy_file(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
+        self.check_new_path(component, &relpath, &abs_path)?;
         utils::copy_file(src, &abs_path).with_context(|| {
             format!(
                 "error copying file '{}' of component '{component}'",
@@ -126,6 +138,7 @@ impl Transaction {
     /// Recursively copy a directory to a relative path of the install prefix.
     pub fn copy_dir(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
+        self.check_new_path(component, &relpath, &abs_path)?;
         utils::copy_dir(src, &abs_path).with_context(|| {
             format!(
                 "error copying directory '{}' of component '{component}'",
@@ -171,6 +184,7 @@ impl Transaction {
     /// the install prefix.
     pub fn write_file(&mut self, component: &str, relpath: PathBuf, content: String) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
+        self.check_new_path(component, &relpath, &abs_path)?;
         let mut file = File::create(&abs_path).with_context(|| {
             format!(
                 "error creating file '{}' of component '{component}'",
@@ -189,6 +203,7 @@ impl Transaction {
         src: &Path,
     ) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
+        self.check_new_path(component, &relpath, &abs_path)?;
         utils::rename("component", src, &abs_path, self.permit_copy_rename).with_context(|| {
             format!(
                 "error moving file '{}' of component '{component}'",
@@ -201,6 +216,7 @@ impl Transaction {
     /// Recursively move a directory to a relative path of the install prefix.
     pub(crate) fn move_dir(&mut self, component: &str, relpath: PathBuf, src: &Path) -> Result<()> {
         let abs_path = self.dest_abs_path(&relpath)?;
+        self.check_new_path(component, &relpath, &abs_path)?;
         utils::rename("component", src, &abs_path, self.permit_copy_rename).with_context(|| {
             format!(
                 "error moving directory '{}' of component '{component}'",
@@ -229,6 +245,17 @@ impl Transaction {
             utils::ensure_dir_exists("component", p)?;
         }
         Ok(abs_path)
+    }
+
+    fn check_new_path(&self, component: &str, relpath: &Path, abs_path: &Path) -> Result<()> {
+        if utils::path_exists(abs_path) {
+            return Err(RustupError::ComponentConflict {
+                name: component.to_owned(),
+                path: relpath.to_owned(),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     pub(crate) fn temp(&self) -> &temp::Context {

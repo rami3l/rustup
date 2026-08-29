@@ -8,8 +8,6 @@ use anyhow::{Result, bail};
 
 use crate::utils;
 
-use super::obj::HashEncoder;
-
 pub struct ObjLocker {
     dir: PathBuf,
 }
@@ -41,20 +39,13 @@ pub struct ObjLock {
 }
 
 impl ObjLock {
-    /// Generates a lock name from the given object ID string.
-    ///
-    /// The object ID should be valid Unicode, with two parts separated by the last `-`, and the
-    /// last byte of each part should fall into [`HashEncoder::ALPHABET`]. Otherwise, this function
-    /// will return `None`.
+    /// Generates a lock name from the reference or object ID.
     fn lock_name(obj: &OsStr) -> Option<String> {
-        let alphabet = HashEncoder::ALPHABET;
         let obj = obj.to_str()?;
-        let (fst, snd) = obj.rsplit_once('-')?;
-        let to_digit = |c: &u8| alphabet.iter().position(|it| it == c);
-        let lock_id =
-            to_digit(fst.as_bytes().last()?)? * alphabet.len() + to_digit(snd.as_bytes().last()?)?;
-        // Take modulo of the resulting number to avoid creating too many lockfiles.
-        let lock_id = lock_id % LOCKFILE_COUNT;
+        let lock_id = obj.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+        }) as usize
+            % LOCKFILE_COUNT;
         Some(format!("{lock_id:x}.lock"))
     }
 }
