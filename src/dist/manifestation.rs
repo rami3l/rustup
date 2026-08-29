@@ -130,7 +130,6 @@ impl Manifestation {
         // Some vars we're going to need a few times
         let prefix = self.installation.prefix();
         let rel_installed_manifest_path = prefix.rel_manifest_file(DIST_MANIFEST);
-        let installed_manifest_path = prefix.path().join(&rel_installed_manifest_path);
 
         // Create the lists of components needed for installation
         let config = self.read_config()?;
@@ -310,8 +309,11 @@ impl Manifestation {
 
         // Install new distribution manifest
         let new_manifest_str = new_manifest.clone().stringify()?;
-        tx.modify_file(rel_installed_manifest_path)?;
-        utils::write_file("manifest", &installed_manifest_path, &new_manifest_str)?;
+        utils::write_file(
+            "manifest",
+            &tx.dest_abs_path(&rel_installed_manifest_path)?,
+            &new_manifest_str,
+        )?;
 
         // Write configuration.
         //
@@ -325,9 +327,11 @@ impl Manifestation {
         };
         let config_str = new_config.stringify()?;
         let rel_config_path = prefix.rel_manifest_file(CONFIG_FILE);
-        let config_path = prefix.path().join(&rel_config_path);
-        tx.modify_file(rel_config_path)?;
-        utils::write_file("dist config", &config_path, &config_str)?;
+        utils::write_file(
+            "dist config",
+            &tx.dest_abs_path(&rel_config_path)?,
+            &config_str,
+        )?;
 
         // End transaction
         tx.commit();
