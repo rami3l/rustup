@@ -54,13 +54,9 @@ impl Components {
             Ok(None)
         }
     }
-    fn write_version(&self, tx: &mut Transaction) -> Result<()> {
-        tx.modify_file(self.prefix.rel_manifest_file(VERSION_FILE))?;
-        utils::write_file(
-            VERSION_FILE,
-            &self.prefix.manifest_file(VERSION_FILE),
-            INSTALLER_VERSION,
-        )?;
+    fn write_version(&self, tx: &Transaction) -> Result<()> {
+        let abs_path = tx.dest_abs_path(&self.prefix.rel_manifest_file(VERSION_FILE))?;
+        utils::write_file(VERSION_FILE, &abs_path, INSTALLER_VERSION)?;
 
         Ok(())
     }
@@ -144,12 +140,11 @@ impl ComponentBuilder {
 
         // Add component to components file
         let path = self.components.rel_components_file();
-        let abs_path = self.components.prefix.abs_path(&path);
-        self.tx.modify_file(path)?;
+        let abs_path = self.tx.dest_abs_path(&path)?;
         utils::append_file("components", &abs_path, &self.name)?;
 
         // Drop in the version file for future use
-        self.components.write_version(&mut self.tx)?;
+        self.components.write_version(&self.tx)?;
 
         Ok(self.tx)
     }
@@ -257,10 +252,9 @@ impl Component {
     pub fn uninstall(&self, mut tx: Transaction) -> Result<Transaction> {
         // Update components file
         let path = self.components.rel_components_file();
-        let abs_path = self.components.prefix.abs_path(&path);
+        let abs_path = tx.dest_abs_path(&path)?;
         let temp = tx.temp().new_file()?;
         utils::filter_file("components", &abs_path, &temp, |l| l != self.name)?;
-        tx.modify_file(path)?;
         utils::rename("components", &temp, &abs_path, tx.permit_copy_rename)?;
 
         // TODO: If this is the last component remove the components file

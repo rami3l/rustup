@@ -1,5 +1,8 @@
-use std::path::{Path, PathBuf};
-use std::{fmt, fs, ops};
+use std::{
+    ffi::OsStr,
+    fmt, fs, ops,
+    path::{Path, PathBuf},
+};
 
 pub(crate) use anyhow::{Context as _, Result};
 use thiserror::Error as ThisError;
@@ -111,6 +114,20 @@ impl Context {
         }
     }
 
+    pub(crate) fn new_directory_named(
+        &self,
+        name: &OsStr,
+        create: impl Fn(&Path) -> Result<()>,
+    ) -> Result<Dir> {
+        self.create_root()?;
+
+        let temp_dir = self.root_directory.join(name);
+
+        debug!(name = "temp", path = %temp_dir.display(), "creating named directory");
+        create(&temp_dir).with_context(|| CreatingError::Directory(PathBuf::from(&temp_dir)))?;
+        Ok(Dir { path: temp_dir })
+    }
+
     pub fn new_file(&self) -> Result<File> {
         self.new_file_with_ext("", "")
     }
@@ -132,6 +149,19 @@ impl Context {
                 return Ok(File { path: temp_file });
             }
         }
+    }
+    pub(crate) fn new_file_named(
+        &self,
+        name: &OsStr,
+        create: impl Fn(&Path) -> Result<()>,
+    ) -> Result<File> {
+        self.create_root()?;
+
+        let temp_file = self.root_directory.join(name);
+
+        debug!(path = %temp_file.display(), "creating temp file");
+        create(&temp_file).with_context(|| CreatingError::File(PathBuf::from(&temp_file)))?;
+        Ok(File { path: temp_file })
     }
 
     pub(crate) fn clean(&self) {

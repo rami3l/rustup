@@ -1,11 +1,14 @@
 //! Tools for building and working with the filesystem of a mock Rust
 //! distribution server, with v1 and v2 manifests.
 
-use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
 use url::Url;
 
@@ -13,13 +16,14 @@ use super::clitools::hard_link;
 use super::mock::MockInstallerBuilder;
 use super::{CROSS_ARCH1, CROSS_ARCH2, MULTI_ARCH1, create_hash, this_host_tuple};
 use crate::dist::{
-    DEFAULT_DIST_SERVER, Profile, TargetTuple,
-    component::{Components, DirectoryPackage, Transaction},
+    DEFAULT_DIST_SERVER, Profile, TargetTuple, ToolchainDesc,
+    component::{Components, DirectoryPackage, ObjLocker, Transaction},
     manifest::{
         Component, CompressionKind, HashedBinary, Manifest, ManifestVersion, Package,
         PackageTargets, Renamed, TargetedPackage,
     },
-    prefix::InstallPrefix,
+    manifestation::Changes,
+    prefix::{InstallPrefix, InstallPrefixWithOrigin},
     temp,
 };
 use crate::process::TestProcess;
@@ -58,18 +62,28 @@ impl DistContext {
     }
 
     pub fn start(&self) -> anyhow::Result<(Transaction, Components, DirectoryPackage<&Path>)> {
-        let tx = self.transaction();
+        let tx = self.transaction()?;
         let components = Components::open(self.prefix.clone())?;
         let pkg = DirectoryPackage::new(self.pkg_dir.path(), true)?;
         Ok((tx, components, pkg))
     }
 
-    pub fn transaction(&self) -> Transaction {
-        Transaction::new(
-            self.prefix.clone(),
+    pub fn transaction(&self) -> anyhow::Result<Transaction> {
+        let toolchain = ToolchainDesc::from_str("stable-x86_64-unknown-linux-gnu")?;
+        let process = &self.tp.process;
+        let rustup_home = process.rustup_home()?;
+        // TODO: Use a proper API for `process` after platform dir lands.
+        let ref_ = rustup_home.join("toolchain").join(toolchain.to_string());
+
+        let tx = Transaction::new(
+            ref_,
+            InstallPrefixWithOrigin::new(&self.prefix, &Changes::empty(&toolchain)),
             self.cx.clone(),
-            self.tp.process.permit_copy_rename(),
-        )
+            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
+            &ObjLocker::new(&rustup_home.join("locks"))?,
+            process.permit_copy_rename(),
+        )?;
+        Ok(tx)
     }
 }
 

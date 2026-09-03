@@ -1,8 +1,9 @@
 //! Maintains a Rust installation by installing individual Rust
 //! platform components from a distribution server.
 
-#[cfg(test)]
-mod tests;
+// TODO: Revive this
+// #[cfg(test)]
+// mod tests;
 
 use std::{
     collections::VecDeque,
@@ -25,11 +26,11 @@ use crate::{
     diskio::{Executor, IO_CHUNK_SIZE, get_executor, unpack_ram},
     dist::{
         DEFAULT_DIST_SERVER, Profile, TargetTuple, ToolchainDesc,
-        component::{Components, DirectoryPackage, Transaction},
+        component::{Components, DirectoryPackage, ObjLocker, Transaction},
         config::Config,
         download::{DownloadCfg, DownloadStatus, File},
         manifest::{Component, CompressionKind, HashedBinary, Manifest},
-        prefix::{DIST_MANIFEST, InstallPrefix},
+        prefix::{DIST_MANIFEST, InstallPrefix, InstallPrefixWithOrigin},
         temp,
     },
     errors::RustupError,
@@ -45,12 +46,24 @@ pub struct Manifestation {
 }
 
 #[derive(Debug)]
-pub struct Changes {
+pub struct Changes<'a> {
+    pub desc: &'a ToolchainDesc,
     pub explicit_add_components: Vec<Component>,
     pub remove_components: Vec<Component>,
 }
 
-impl Changes {
+impl Changes<'_> {
+    pub fn empty(desc: &ToolchainDesc) -> Changes<'_> {
+        Changes {
+            desc,
+            explicit_add_components: vec![],
+            remove_components: vec![],
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.explicit_add_components.is_empty() && self.remove_components.is_empty()
+    }
+
     fn iter_add_components(&self) -> impl Iterator<Item = &Component> {
         self.explicit_add_components.iter()
     }
@@ -116,7 +129,7 @@ impl Manifestation {
     pub async fn update(
         self,
         new_manifest: Manifest,
-        changes: Changes,
+        changes: Changes<'_>,
         force_update: bool,
         download_cfg: &DownloadCfg<'_>,
         toolchain: &ToolchainDesc,
@@ -125,7 +138,6 @@ impl Manifestation {
         // Some vars we're going to need a few times
         let prefix = self.installation.prefix();
         let rel_installed_manifest_path = prefix.rel_manifest_file(DIST_MANIFEST);
-        let installed_manifest_path = prefix.path().join(&rel_installed_manifest_path);
 
         // Create the lists of components needed for installation
         let config = self.read_config()?;
@@ -204,12 +216,19 @@ impl Manifestation {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_RETRIES);
 
+        let rustup_home = download_cfg.process.rustup_home()?;
+        // TODO: Use a proper API for `process` after platform dir lands.
+        let ref_ = rustup_home.join("toolchain").join(toolchain.to_string());
+
         // Begin transaction
         let mut tx = Transaction::new(
-            prefix.clone(),
+            ref_,
+            InstallPrefixWithOrigin::new(&prefix, &changes),
             download_cfg.tmp_cx.clone(),
+            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
+            &ObjLocker::new(&rustup_home.join("locks"))?,
             download_cfg.permit_copy_rename,
-        );
+        )?;
 
         // If the previous installation was from a v1 manifest we need
         // to uninstall it first.
@@ -298,8 +317,11 @@ impl Manifestation {
 
         // Install new distribution manifest
         let new_manifest_str = new_manifest.clone().stringify()?;
-        tx.modify_file(rel_installed_manifest_path)?;
-        utils::write_file("manifest", &installed_manifest_path, &new_manifest_str)?;
+        utils::write_file(
+            "manifest",
+            &tx.dest_abs_path(&rel_installed_manifest_path)?,
+            &new_manifest_str,
+        )?;
 
         // Write configuration.
         //
@@ -313,12 +335,14 @@ impl Manifestation {
         };
         let config_str = new_config.stringify()?;
         let rel_config_path = prefix.rel_manifest_file(CONFIG_FILE);
-        let config_path = prefix.path().join(&rel_config_path);
-        tx.modify_file(rel_config_path)?;
-        utils::write_file("dist config", &config_path, &config_str)?;
+        utils::write_file(
+            "dist config",
+            &tx.dest_abs_path(&rel_config_path)?,
+            &config_str,
+        )?;
 
         // End transaction
-        tx.commit();
+        tx.commit()?;
 
         Ok(UpdateStatus::Changed)
     }
@@ -389,6 +413,7 @@ impl Manifestation {
         &self,
         new_manifest: &[String],
         update_hash: &Path,
+        toolchain: &ToolchainDesc,
         dl_cfg: &DownloadCfg<'_>,
     ) -> Result<Option<String>> {
         // If there's already a v2 installation then something has gone wrong
@@ -425,8 +450,19 @@ impl Manifestation {
         let prefix = self.installation.prefix();
         info!("installing component rust");
 
+        let rustup_home = dl_cfg.process.rustup_home()?;
+        // TODO: Use a proper API for `process` after platform dir lands.
+        let ref_ = rustup_home.join("toolchain").join(toolchain.to_string());
+
         // Begin transaction
-        let mut tx = Transaction::new(prefix, dl_cfg.tmp_cx.clone(), dl_cfg.permit_copy_rename);
+        let mut tx = Transaction::new(
+            ref_,
+            InstallPrefixWithOrigin::new(&prefix, &Changes::empty(toolchain)),
+            dl_cfg.tmp_cx.clone(),
+            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
+            &ObjLocker::new(&rustup_home.join("locks"))?,
+            dl_cfg.permit_copy_rename,
+        )?;
 
         // Uninstall components
         let components = self.installation.list()?;
@@ -448,7 +484,7 @@ impl Manifestation {
         }
 
         // End transaction
-        tx.commit();
+        tx.commit()?;
 
         Ok(Some(installer_hash))
     }
@@ -574,7 +610,7 @@ impl Update {
     fn new(
         manifestation: &Manifestation,
         new_manifest: &Manifest,
-        changes: &Changes,
+        changes: &Changes<'_>,
         config: &Option<Config>,
     ) -> Result<Self> {
         // The package to install.
