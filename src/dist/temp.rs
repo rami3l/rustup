@@ -114,14 +114,17 @@ impl Context {
         }
     }
 
-    pub(crate) fn new_directory_named(&self, name: &OsStr) -> Result<Dir> {
+    pub(crate) fn new_directory_named(
+        &self,
+        name: &OsStr,
+        create: impl Fn(&Path) -> Result<()>,
+    ) -> Result<Dir> {
         self.create_root()?;
 
         let temp_dir = self.root_directory.join(name);
 
         debug!(name = "temp", path = %temp_dir.display(), "creating named directory");
-        fs::create_dir(&temp_dir)
-            .with_context(|| CreatingError::Directory(PathBuf::from(&temp_dir)))?;
+        create(&temp_dir).with_context(|| CreatingError::Directory(PathBuf::from(&temp_dir)))?;
         Ok(Dir { path: temp_dir })
     }
 
@@ -147,14 +150,17 @@ impl Context {
             }
         }
     }
-    pub(crate) fn new_file_named(&self, name: &OsStr) -> Result<File> {
+    pub(crate) fn new_file_named(
+        &self,
+        name: &OsStr,
+        create: impl Fn(&Path) -> Result<()>,
+    ) -> Result<File> {
         self.create_root()?;
 
         let temp_file = self.root_directory.join(name);
 
         debug!(path = %temp_file.display(), "creating temp file");
-        fs::File::create(&temp_file)
-            .with_context(|| CreatingError::File(PathBuf::from(&temp_file)))?;
+        create(&temp_file).with_context(|| CreatingError::File(PathBuf::from(&temp_file)))?;
         Ok(File { path: temp_file })
     }
 

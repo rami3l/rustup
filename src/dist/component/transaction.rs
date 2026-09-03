@@ -9,7 +9,7 @@
 //! FIXME: This uses ensure_dir_exists in some places but rollback
 //! does not remove any dirs created by it.
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -68,13 +68,16 @@ impl Transaction {
         // Instead, `prefix.orig` should be set straight to `None`. Essentially, a full upgrade or
         // full uninstallation will be disqualified from being a "modification".
 
-        let tmp_obj = tmp_cx.new_directory_named(obj)?;
-        if let Some(orig) = prefix.orig {
-            utils::copy_dir(orig.path(), &tmp_obj)?
-        }
+        let tmp_obj = tmp_cx.new_directory_named(obj, |tmp_obj| {
+            let Some(orig) = prefix.orig else {
+                return Ok(fs::create_dir(tmp_obj)?);
+            };
+            utils::copy_dir(orig.path(), tmp_obj)
+        })?;
 
-        let tmp_ref = tmp_cx.new_file_named(ref_name)?;
-        utils::symlink_dir(&Path::new("../toolchains").join(obj), &tmp_ref)?;
+        let tmp_ref = tmp_cx.new_file_named(ref_name, |tmp_ref| {
+            utils::symlink_dir(&Path::new("../toolchains").join(obj), tmp_ref)
+        })?;
 
         Ok(Self {
             lock: Some(lock),
