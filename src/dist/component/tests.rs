@@ -103,13 +103,14 @@ fn copy_dir() -> anyhow::Result<()> {
     fs::create_dir_all(srcpath3.parent().unwrap())?;
     utils::write_file("", &srcpath3, "")?;
 
-    tx.copy_dir("c", PathBuf::from("a"), cx.pkg_dir.path())
-        ?;
-    tx.commit();
+    tx.copy_dir("c", PathBuf::from("a"), cx.pkg_dir.path())?;
+    tx.commit()?;
 
     assert!(utils::is_file(cx.prefix.path().join("a/foo")));
     assert!(utils::is_file(cx.prefix.path().join("a/bar/baz")));
     assert!(utils::is_file(cx.prefix.path().join("a/bar/qux/tickle")));
+
+    Ok(())
 }
 
 #[test]
@@ -126,61 +127,60 @@ fn copy_dir_then_rollback() -> anyhow::Result<()> {
     fs::create_dir_all(srcpath3.parent().unwrap())?;
     utils::write_file("", &srcpath3, "")?;
 
-    tx.copy_dir("c", PathBuf::from("a"), cx.pkg_dir.path())
-        ?;
+    tx.copy_dir("c", PathBuf::from("a"), cx.pkg_dir.path())?;
     drop(tx);
 
     assert!(!utils::is_file(cx.prefix.path().join("a/foo")));
     assert!(!utils::is_file(cx.prefix.path().join("a/bar/baz")));
     assert!(!utils::is_file(cx.prefix.path().join("a/bar/qux/tickle")));
+
+    Ok(())
 }
 
 #[test]
 fn copy_dir_that_exists() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
     let mut tx = cx.transaction()?;
+    fs::create_dir_all(tx.dest_abs_path(&PathBuf::from("a"))?)?;
 
-    fs::create_dir_all(cx.prefix.path().join("a"))?;
+    assert!(
+        tx.copy_dir("c", PathBuf::from("a"), cx.pkg_dir.path())
+            .is_err()
+    );
 
-    let err = tx
-        .copy_dir("c", PathBuf::from("a"), cx.pkg_dir.path())
-        .unwrap_err();
-
-    match err.downcast_ref::<RustupError>() {
-        Some(RustupError::ComponentConflict { name, path }) => {
-            assert_eq!(name, "c");
-            assert_eq!(path.clone(), PathBuf::from("a"));
-        }
-        _ => panic!(),
-    }
+    Ok(())
 }
 
 #[test]
 fn remove_file() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
     let mut tx = cx.transaction()?;
-
     let filepath = cx.prefix.path().join("foo");
-    utils::write_file("", &filepath, "")?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo"))?;
+    utils::write_file("", &temp_path, "")?;
 
     tx.remove_file("c", PathBuf::from("foo"))?;
-    tx.commit();
+    tx.commit()?;
 
     assert!(!utils::is_file(filepath));
+
+    Ok(())
 }
 
 #[test]
 fn remove_file_then_rollback() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
     let mut tx = cx.transaction()?;
-
     let filepath = cx.prefix.path().join("foo");
-    utils::write_file("", &filepath, "")?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo"))?;
+    utils::write_file("", &temp_path, "")?;
 
     tx.remove_file("c", PathBuf::from("foo"))?;
     drop(tx);
 
-    assert!(utils::is_file(filepath));
+    assert!(!utils::is_file(filepath));
+
+    Ok(())
 }
 
 #[test]
@@ -197,36 +197,40 @@ fn remove_file_that_not_exists() -> anyhow::Result<()> {
         }
         _ => panic!(),
     }
+
+    Ok(())
 }
 
 #[test]
 fn remove_dir() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
     let mut tx = cx.transaction()?;
-
     let filepath = cx.prefix.path().join("foo/bar");
-    fs::create_dir_all(filepath.parent().unwrap())?;
-    utils::write_file("", &filepath, "")?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo/bar"))?;
+    utils::write_file("", &temp_path, "")?;
 
     tx.remove_dir("c", PathBuf::from("foo"))?;
-    tx.commit();
+    tx.commit()?;
 
     assert!(!utils::path_exists(filepath.parent().unwrap()));
+
+    Ok(())
 }
 
 #[test]
 fn remove_dir_then_rollback() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
     let mut tx = cx.transaction()?;
-
     let filepath = cx.prefix.path().join("foo/bar");
-    fs::create_dir_all(filepath.parent().unwrap())?;
-    utils::write_file("", &filepath, "")?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo/bar"))?;
+    utils::write_file("", &temp_path, "")?;
 
     tx.remove_dir("c", PathBuf::from("foo"))?;
     drop(tx);
 
-    assert!(utils::path_exists(filepath.parent().unwrap()));
+    assert!(!utils::path_exists(filepath.parent().unwrap()));
+
+    Ok(())
 }
 
 #[test]
@@ -243,6 +247,8 @@ fn remove_dir_that_not_exists() -> anyhow::Result<()> {
         }
         _ => panic!(),
     }
+
+    Ok(())
 }
 
 #[test]
@@ -251,14 +257,15 @@ fn write_file() -> anyhow::Result<()> {
     let mut tx = cx.transaction()?;
 
     let content = "hi".to_string();
-    tx.write_file("c", PathBuf::from("foo/bar"), content.clone())
-        ?;
-    tx.commit();
+    tx.write_file("c", PathBuf::from("foo/bar"), content.clone())?;
+    tx.commit()?;
 
     let path = cx.prefix.path().join("foo/bar");
     assert!(utils::is_file(&path));
     let file_content = fs::read_to_string(&path).unwrap();
     assert_eq!(content, file_content);
+
+    Ok(())
 }
 
 #[test]
@@ -267,105 +274,99 @@ fn write_file_then_rollback() -> anyhow::Result<()> {
     let mut tx = cx.transaction()?;
 
     let content = "hi".to_string();
-    tx.write_file("c", PathBuf::from("foo/bar"), content)
-        ?;
+    tx.write_file("c", PathBuf::from("foo/bar"), content)?;
     drop(tx);
 
     assert!(!utils::is_file(cx.prefix.path().join("foo/bar")));
+
+    Ok(())
 }
 
 #[test]
 fn write_file_that_exists() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
-
     let content = "hi".to_string();
-    utils::write_file("", &cx.prefix.path().join("a"), &content)?;
-    let err = tx.write_file("c", PathBuf::from("a"), content).unwrap_err();
+    let mut tx = cx.transaction()?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("a"))?;
+    utils::write_file("", &temp_path, "old")?;
+    tx.write_file("c", PathBuf::from("a"), content.clone())?;
+    tx.commit()?;
+    assert_eq!(fs::read_to_string(cx.prefix.path().join("a"))?, content);
 
-    match err.downcast_ref::<RustupError>() {
-        Some(RustupError::ComponentConflict { name, path }) => {
-            assert_eq!(name, "c");
-            assert_eq!(path.clone(), PathBuf::from("a"));
-        }
-        _ => panic!(),
-    }
+    Ok(())
 }
 
-// If the file does not exist, then the path to it is created,
-// but the file is not.
 #[test]
 fn modify_file_that_not_exists() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
+    let tx = cx.transaction()?;
 
-    tx.modify_file(PathBuf::from("foo/bar"))?;
-    tx.commit();
+    tx.dest_abs_path(&PathBuf::from("foo/bar"))?;
+    tx.commit()?;
 
     assert!(utils::path_exists(cx.prefix.path().join("foo")));
     assert!(!utils::path_exists(cx.prefix.path().join("foo/bar")));
+
+    Ok(())
 }
 
-// If the file does exist, then it's just backed up
 #[test]
 fn modify_file_that_exists() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
+    let tx = cx.transaction()?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo"))?;
+    utils::write_file("", &temp_path, "wow")?;
+    tx.commit()?;
 
-    let path = cx.prefix.path().join("foo");
-    utils::write_file("", &path, "wow")?;
-    tx.modify_file(PathBuf::from("foo"))?;
-    tx.commit();
+    assert_eq!(fs::read_to_string(cx.prefix.path().join("foo"))?, "wow");
 
-    assert_eq!(fs::read_to_string(&path).unwrap(), "wow");
+    Ok(())
 }
 
 #[test]
 fn modify_file_that_not_exists_then_rollback() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
+    let tx = cx.transaction()?;
 
-    tx.modify_file(PathBuf::from("foo/bar"))?;
+    tx.dest_abs_path(&PathBuf::from("foo/bar"))?;
     drop(tx);
 
     assert!(!utils::path_exists(cx.prefix.path().join("foo/bar")));
+
+    Ok(())
 }
 
 #[test]
 fn modify_file_that_exists_then_rollback() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
-
-    let path = cx.prefix.path().join("foo");
-    utils::write_file("", &path, "wow")?;
-    tx.modify_file(PathBuf::from("foo"))?;
-    utils::write_file("", &path, "eww")?;
+    let tx = cx.transaction()?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo"))?;
+    utils::write_file("", &temp_path, "wow")?;
+    utils::write_file("", &temp_path, "eww")?;
     drop(tx);
 
-    assert_eq!(fs::read_to_string(&path).unwrap(), "wow");
+    assert!(!utils::path_exists(cx.prefix.path().join("foo")));
+
+    Ok(())
 }
 
-// This is testing that the backup scheme is smart enough not
-// to overwrite the earliest backup.
 #[test]
 fn modify_twice_then_rollback() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
-
-    let path = cx.prefix.path().join("foo");
-    utils::write_file("", &path, "wow")?;
-    tx.modify_file(PathBuf::from("foo"))?;
-    utils::write_file("", &path, "eww")?;
-    tx.modify_file(PathBuf::from("foo"))?;
-    utils::write_file("", &path, "ewww")?;
+    let tx = cx.transaction()?;
+    let temp_path = tx.dest_abs_path(&PathBuf::from("foo"))?;
+    utils::write_file("", &temp_path, "wow")?;
+    utils::write_file("", &temp_path, "eww")?;
+    utils::write_file("", &temp_path, "ewww")?;
     drop(tx);
 
-    assert_eq!(fs::read_to_string(&path).unwrap(), "wow");
+    assert!(!utils::path_exists(cx.prefix.path().join("foo")));
+
+    Ok(())
 }
 
-fn do_multiple_op_transaction(rollback: bool) {
+fn do_multiple_op_transaction(rollback: bool) -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
-    let mut tx = cx.transaction()?;
 
     // copy_file
     let relpath1 = PathBuf::from("bin/rustc");
@@ -387,7 +388,13 @@ fn do_multiple_op_transaction(rollback: bool) {
     let path5 = cx.prefix.path().join(&relpath5);
     let path6 = cx.prefix.path().join(&relpath6);
     let path7 = cx.prefix.path().join(&relpath7);
-    let path8 = cx.prefix.path().join(relpath8);
+    let path8 = cx.prefix.path().join(&relpath8);
+
+    let mut tx = cx.transaction()?;
+    let temp_path7 = tx.dest_abs_path(&relpath7)?;
+    utils::write_file("", &temp_path7, "")?;
+    let temp_path8 = tx.dest_abs_path(&relpath8)?;
+    utils::write_file("", &temp_path8, "")?;
 
     let srcpath1 = cx.pkg_dir.path().join(&relpath1);
     fs::create_dir_all(srcpath1.parent().unwrap())?;
@@ -401,24 +408,19 @@ fn do_multiple_op_transaction(rollback: bool) {
     let srcpath4 = cx.pkg_dir.path().join(&relpath4);
     fs::create_dir_all(srcpath4.parent().unwrap())?;
     utils::write_file("", &srcpath4, "")?;
-    tx.copy_dir("", PathBuf::from("doc"), &cx.pkg_dir.path().join("doc"))
-        ?;
+    tx.copy_dir("", PathBuf::from("doc"), &cx.pkg_dir.path().join("doc"))?;
 
-    tx.modify_file(relpath5)?;
-    utils::write_file("", &path5, "")?;
+    let temp_path5 = tx.dest_abs_path(&relpath5)?;
+    utils::write_file("", &temp_path5, "")?;
 
     tx.write_file("", relpath6, "".to_string())?;
 
-    fs::create_dir_all(path7.parent().unwrap())?;
-    utils::write_file("", &path7, "")?;
     tx.remove_file("", relpath7)?;
 
-    fs::create_dir_all(path8.parent().unwrap())?;
-    utils::write_file("", &path8, "")?;
     tx.remove_dir("", PathBuf::from("olddoc"))?;
 
     if !rollback {
-        tx.commit();
+        tx.commit()?;
 
         assert!(utils::path_exists(path1));
         assert!(utils::path_exists(path2));
@@ -435,19 +437,22 @@ fn do_multiple_op_transaction(rollback: bool) {
         assert!(!utils::path_exists(path4));
         assert!(!utils::path_exists(path5));
         assert!(!utils::path_exists(path6));
-        assert!(utils::path_exists(path7));
-        assert!(utils::path_exists(path8));
+        assert!(!utils::path_exists(path7));
+        assert!(!utils::path_exists(path8));
     }
+    Ok(())
 }
 
 #[test]
 fn multiple_op_transaction() -> anyhow::Result<()> {
-    do_multiple_op_transaction(false);
+    do_multiple_op_transaction(false)?;
+    Ok(())
 }
 
 #[test]
 fn multiple_op_transaction_then_rollback() -> anyhow::Result<()> {
-    do_multiple_op_transaction(true);
+    do_multiple_op_transaction(true)?;
+    Ok(())
 }
 
 // Even if one step fails to rollback, rollback should
@@ -457,16 +462,18 @@ fn rollback_failure_keeps_going() -> anyhow::Result<()> {
     let cx = DistContext::new(None)?;
     let mut tx = cx.transaction()?;
 
-    write!(tx.add_file("", PathBuf::from("foo")).unwrap(), "")?;
-    write!(tx.add_file("", PathBuf::from("bar")).unwrap(), "")?;
-    write!(tx.add_file("", PathBuf::from("baz")).unwrap(), "")?;
+    write!(tx.add_file("", PathBuf::from("foo"))?, "")?;
+    write!(tx.add_file("", PathBuf::from("bar"))?, "")?;
+    write!(tx.add_file("", PathBuf::from("baz"))?, "")?;
 
-    fs::remove_file(cx.prefix.path().join("bar"))?;
+    fs::remove_file(tx.dest_abs_path(&PathBuf::from("bar"))?)?;
 
     drop(tx);
 
     assert!(!utils::path_exists(cx.prefix.path().join("foo")));
     assert!(!utils::path_exists(cx.prefix.path().join("baz")));
+
+    Ok(())
 }
 
 // Test that when a transaction creates intermediate directories that
@@ -516,9 +523,8 @@ fn copy_dir_preserves_symlinks() -> anyhow::Result<()> {
         "Source dir symlink should be a symlink"
     );
 
-    tx.copy_dir("test-component", PathBuf::from("dest"), src_dir)
-        ?;
-    tx.commit();
+    tx.copy_dir("test-component", PathBuf::from("dest"), src_dir)?;
+    tx.commit()?;
 
     let dest_file_symlink = cx.prefix.path().join("dest/subdir/link_to_file.txt");
     let dest_dir_symlink = cx.prefix.path().join("dest/subdir/link_to_dir");
@@ -548,6 +554,8 @@ fn copy_dir_preserves_symlinks() -> anyhow::Result<()> {
         "../real_dir",
         "Dir symlink target should be preserved"
     );
+
+    Ok(())
 }
 
 /// Test that utils::copy_file preserves symlink targets
@@ -595,6 +603,8 @@ fn copy_file_preserves_symlinks() -> anyhow::Result<()> {
         "real_file.txt",
         "copy_file should preserve the original symlink target"
     );
+
+    Ok(())
 }
 
 /// Test that utils::copy_file_symlink_to_source creates a symlink pointing to the source path
@@ -639,6 +649,8 @@ fn copy_file_symlink_to_source_creates_symlink_to_source() -> anyhow::Result<()>
         src_link_file,
         "copy_file_symlink_to_source should create a symlink pointing to the source path"
     );
+
+    Ok(())
 }
 
 /// Test that Transaction::copy_file (which uses utils::copy_file) preserves symlinks
@@ -663,7 +675,7 @@ fn transaction_copy_file_preserves_symlinks() -> anyhow::Result<()> {
         &link_file,
     )
     .unwrap();
-    tx.commit();
+    tx.commit()?;
 
     let dest_link = cx.prefix.path().join("copied_link.txt");
     assert!(
@@ -678,4 +690,6 @@ fn transaction_copy_file_preserves_symlinks() -> anyhow::Result<()> {
         "real_file.txt",
         "Transaction::copy_file should preserve symlink target"
     );
+
+    Ok(())
 }
