@@ -1,4 +1,3 @@
-
 pub use self::lock::*;
 pub use self::obj::*;
 /// An interpreter for the rust-installer [1] installation format.
@@ -18,6 +17,5 @@ mod obj;
 // The per-object FS locks.
 mod lock;
 
-// TODO: Recover this test module.
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
