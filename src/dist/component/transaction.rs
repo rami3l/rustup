@@ -17,6 +17,7 @@ use std::{
 };
 
 use anyhow::Context;
+use pathdiff::diff_paths;
 use tracing::{error, info};
 
 use super::lock::{ObjLock, ObjLocker};
@@ -63,6 +64,9 @@ impl Transaction {
         let ref_name = ref_
             .file_name()
             .context("when extracting base name from reference path")?;
+        let ref_dir = ref_
+            .parent()
+            .context("when extracting parent directory from reference path")?;
         let obj = prefix
             .dest
             .path()
@@ -89,8 +93,12 @@ impl Transaction {
         }
 
         let tmp_ref = tmp_dir.join([ref_name, obj].join(OsStr::new("-")));
-        // TODO: Use proper path delta like `diff_paths(original, link.parent().unwrap())`.
-        utils::symlink_dir(&Path::new("../heap").join(obj), &tmp_ref)?;
+        utils::symlink_dir(
+            &diff_paths(heap, ref_dir)
+                .context("when calculating source of toolchain reference")?
+                .join(obj),
+            &tmp_ref,
+        )?;
 
         Ok(Self {
             lock: Some(lock),

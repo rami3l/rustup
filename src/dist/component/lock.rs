@@ -16,7 +16,6 @@ pub struct ObjLocker {
 
 impl ObjLocker {
     pub fn new(dir: &Path) -> Result<Self> {
-        utils::ensure_dir_exists("lock directory", dir)?;
         Ok(Self {
             dir: dir.to_owned(),
         })
@@ -27,6 +26,7 @@ impl ObjLocker {
             bail!("invalid object ID `{}`", obj.display());
         };
 
+        utils::ensure_dir_exists("lock directory", &self.dir)?;
         let file = File::create(self.dir.join(lock))?;
         file.try_lock()?;
         Ok(ObjLock { file })

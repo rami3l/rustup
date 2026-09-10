@@ -104,14 +104,10 @@ fn basic_install() {
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
     tx.commit().unwrap();
 
-    assert!(utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(utils::path_exists(cx.inst_dir.path().join("lib/bar")));
-    assert!(utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc1")
-    ));
-    assert!(utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc2")
-    ));
+    assert!(utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(utils::path_exists(cx.prefix.path().join("lib/bar")));
+    assert!(utils::path_exists(cx.prefix.path().join("doc/stuff/doc1")));
+    assert!(utils::path_exists(cx.prefix.path().join("doc/stuff/doc2")));
 
     assert!(components.find("mycomponent").unwrap().is_some());
 }
@@ -137,8 +133,8 @@ fn multiple_component_install() {
     let tx = pkg.install(&components, "mycomponent2", None, tx).unwrap();
     tx.commit().unwrap();
 
-    assert!(utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(utils::path_exists(cx.inst_dir.path().join("lib/bar")));
+    assert!(utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(utils::path_exists(cx.prefix.path().join("lib/bar")));
 
     assert!(components.find("mycomponent").unwrap().is_some());
     assert!(components.find("mycomponent2").unwrap().is_some());
@@ -170,24 +166,19 @@ fn uninstall() {
     tx.commit().unwrap();
 
     // Now uninstall
-    // TODO: Fix the below
-    // let mut tx = cx.transaction().unwrap();
-    // for component in components.list().unwrap() {
-    //     tx = component.uninstall(tx).unwrap();
-    // }
-    // tx.commit().unwrap();
-    //
-    // assert!(!utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    // assert!(!utils::path_exists(cx.inst_dir.path().join("lib/bar")));
-    // assert!(!utils::path_exists(
-    //     cx.inst_dir.path().join("doc/stuff/doc1")
-    // ));
-    // assert!(!utils::path_exists(
-    //     cx.inst_dir.path().join("doc/stuff/doc2")
-    // ));
-    // assert!(!utils::path_exists(cx.inst_dir.path().join("doc/stuff")));
-    // assert!(components.find("mycomponent").unwrap().is_none());
-    // assert!(components.find("mycomponent2").unwrap().is_none());
+    let mut tx = cx.transaction().unwrap();
+    for component in components.list().unwrap() {
+        tx = component.uninstall(tx).unwrap();
+    }
+    tx.commit().unwrap();
+
+    assert!(!utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(!utils::path_exists(cx.prefix.path().join("lib/bar")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff/doc1")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff/doc2")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff")));
+    assert!(components.find("mycomponent").unwrap().is_none());
+    assert!(components.find("mycomponent2").unwrap().is_none());
 }
 
 // If any single file can't be uninstalled, it is not a fatal error

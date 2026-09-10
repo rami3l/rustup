@@ -47,7 +47,7 @@ impl DistContext {
         }
 
         let inst_dir = tempfile::Builder::new().prefix("rustup").tempdir()?;
-        let prefix = InstallPrefix::from(inst_dir.path().to_owned());
+        let prefix = InstallPrefix::from(inst_dir.path().join("prefix"));
         let tmp_dir = tempfile::Builder::new().prefix("rustup").tempdir()?;
 
         Ok(Self {
@@ -71,22 +71,24 @@ impl DistContext {
     }
 
     pub fn transaction(&self) -> anyhow::Result<Transaction> {
-        let toolchain = ToolchainDesc::from_str("stable-x86_64-unknown-linux-gnu")?;
-        let process = &self.tp.process;
-        let rustup_home = process.rustup_home()?;
-        // TODO: Use a proper API for `process` after platform dir lands.
-        let heap_dir = rustup_home.join("heap");
-        let ref_ = rustup_home.join("toolchains").join(toolchain.to_string());
+        let toolchain = "stable-x86_64-unknown-linux-gnu";
+        let tmp_dir = self._tmp_dir.path();
+
+        let heap_dir = tmp_dir.join("heap");
+        let ref_ = self.prefix.path().to_owned();
 
         let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
         let tx = Transaction::new(
             ref_,
-            InstallPrefixWithOrigin::new(orig.as_ref(), &Changes::empty(&toolchain), &heap_dir),
+            InstallPrefixWithOrigin::new(
+                orig.as_ref(),
+                &Changes::empty(&ToolchainDesc::from_str(toolchain)?),
+                &heap_dir,
+            ),
             self.cx.clone(),
             &heap_dir,
-            // TODO: Again, use a proper wrapper on `process` for the path (or just the locker).
-            &ObjLocker::new(&rustup_home.join("locks"))?,
-            process.permit_copy_rename(),
+            &ObjLocker::new(&tmp_dir.join("locks"))?,
+            self.tp.process.permit_copy_rename(),
         )?;
         Ok(tx)
     }
