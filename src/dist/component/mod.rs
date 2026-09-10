@@ -15,6 +15,5 @@ mod obj;
 // The per-object FS locks.
 mod lock;
 
-// TODO: Recover this test module.
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
