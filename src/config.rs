@@ -556,7 +556,7 @@ impl<'a> Cfg<'a> {
                     "this upgrade will remove all existing toolchains; you will need to reinstall them"
                 );
 
-                let dirs = utils::read_dir("toolchains", &self.toolchains_dir)?;
+                let dirs = utils::read_dir("toolchains", &self.refs_dir)?;
                 for dir in dirs {
                     let dir = dir.context("IO Error reading toolchains")?;
                     utils::remove_dir("toolchain", &dir.path())?;
