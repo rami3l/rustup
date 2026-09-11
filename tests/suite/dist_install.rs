@@ -2,7 +2,7 @@ use std::{fs::File, io::Write};
 
 use rustup::{
     dist::{
-        component::{Components, DirectoryPackage, Transaction},
+        component::{Components, DirectoryPackage},
         prefix::InstallPrefix,
     },
     test::{DistContext, MockComponentBuilder, MockFile, MockInstallerBuilder},
@@ -102,16 +102,12 @@ fn basic_install() {
     let cx = DistContext::new(Some(mock)).unwrap();
     let (tx, components, pkg) = cx.start().unwrap();
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
-    tx.commit();
+    tx.commit().unwrap();
 
-    assert!(utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(utils::path_exists(cx.inst_dir.path().join("lib/bar")));
-    assert!(utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc1")
-    ));
-    assert!(utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc2")
-    ));
+    assert!(utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(utils::path_exists(cx.prefix.path().join("lib/bar")));
+    assert!(utils::path_exists(cx.prefix.path().join("doc/stuff/doc1")));
+    assert!(utils::path_exists(cx.prefix.path().join("doc/stuff/doc2")));
 
     assert!(components.find("mycomponent").unwrap().is_some());
 }
@@ -135,10 +131,10 @@ fn multiple_component_install() {
     let (tx, components, pkg) = cx.start().unwrap();
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
     let tx = pkg.install(&components, "mycomponent2", None, tx).unwrap();
-    tx.commit();
+    tx.commit().unwrap();
 
-    assert!(utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(utils::path_exists(cx.inst_dir.path().join("lib/bar")));
+    assert!(utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(utils::path_exists(cx.prefix.path().join("lib/bar")));
 
     assert!(components.find("mycomponent").unwrap().is_some());
     assert!(components.find("mycomponent2").unwrap().is_some());
@@ -167,28 +163,20 @@ fn uninstall() {
     let (tx, components, pkg) = cx.start().unwrap();
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
     let tx = pkg.install(&components, "mycomponent2", None, tx).unwrap();
-    tx.commit();
+    tx.commit().unwrap();
 
     // Now uninstall
-    let mut tx = Transaction::new(
-        cx.prefix.clone(),
-        cx.cx.clone(),
-        cx.tp.process.permit_copy_rename(),
-    );
+    let mut tx = cx.transaction().unwrap();
     for component in components.list().unwrap() {
         tx = component.uninstall(tx).unwrap();
     }
-    tx.commit();
+    tx.commit().unwrap();
 
-    assert!(!utils::path_exists(cx.inst_dir.path().join("bin/foo")));
-    assert!(!utils::path_exists(cx.inst_dir.path().join("lib/bar")));
-    assert!(!utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc1")
-    ));
-    assert!(!utils::path_exists(
-        cx.inst_dir.path().join("doc/stuff/doc2")
-    ));
-    assert!(!utils::path_exists(cx.inst_dir.path().join("doc/stuff")));
+    assert!(!utils::path_exists(cx.prefix.path().join("bin/foo")));
+    assert!(!utils::path_exists(cx.prefix.path().join("lib/bar")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff/doc1")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff/doc2")));
+    assert!(!utils::path_exists(cx.prefix.path().join("doc/stuff")));
     assert!(components.find("mycomponent").unwrap().is_none());
     assert!(components.find("mycomponent2").unwrap().is_none());
 }
@@ -212,7 +200,7 @@ fn component_bad_version() {
     let cx = DistContext::new(Some(mock)).unwrap();
     let (tx, components, pkg) = cx.start().unwrap();
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
-    tx.commit();
+    tx.commit().unwrap();
 
     // Write a bogus version to the component manifest directory
     utils::write_file(
@@ -245,7 +233,7 @@ fn install_to_prefix_that_does_not_exist() {
     cx.prefix = InstallPrefix::from(does_not_exist.clone());
     let (tx, components, pkg) = cx.start().unwrap();
     let tx = pkg.install(&components, "mycomponent", None, tx).unwrap();
-    tx.commit();
+    tx.commit().unwrap();
 
     // The directory that does not exist
     assert!(utils::path_exists(does_not_exist.join("bin/foo")));

@@ -1173,6 +1173,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
                 explicit_add_components.sort();
 
                 let changes = Changes {
+                    desc: toolchain,
                     explicit_add_components,
                     remove_components: Vec::new(),
                 };
@@ -1238,7 +1239,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
             })?;
 
         let result = manifestation
-            .update_v1(&manifest, &self.update_hash, download)
+            .update_v1(&manifest, &self.update_hash, toolchain, download)
             .await;
 
         // inspect, determine what context to add, then process afterwards.
