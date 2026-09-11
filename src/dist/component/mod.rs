@@ -2,7 +2,7 @@
 ///
 /// https://github.com/rust-lang/rust-installer
 pub use self::transaction::*;
-pub use self::{components::*, lock::*, obj::*, package::*};
+pub use self::{components::*, obj::*, package::*};
 
 // Transactional file system tools
 mod transaction;
@@ -12,8 +12,6 @@ mod package;
 mod components;
 // The representation of an object and its identification-related semantics.
 mod obj;
-// The per-object FS locks.
-mod lock;
 
 #[cfg(test)]
 mod tests;

@@ -16,11 +16,11 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use pathdiff::diff_paths;
 use tracing::{error, info};
 
-use super::lock::{ObjLock, ObjLocker};
+use super::obj::{ObjLock, ObjLocker};
 use crate::{
     dist::{
         prefix::{InstallPrefix, InstallPrefixWithOrigin},
@@ -73,7 +73,12 @@ impl Transaction {
             .file_name()
             .context("when extracting base name from installation prefix")?;
 
-        let lock = locker.lock(obj)?;
+        let Some(lock) = locker.lock(obj)? else {
+            bail!(
+                "object `{}` is already locked by another transaction",
+                obj.display(),
+            );
+        };
 
         // TODO: From now on, a full upgrade should never involve removing all its components.
         // Instead, `prefix.orig` should be set straight to `None`. Essentially, a full upgrade or

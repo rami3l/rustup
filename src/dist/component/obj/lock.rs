@@ -1,12 +1,12 @@
 use std::{
     ffi::OsStr,
-    fs::File,
+    fs::{File, TryLockError},
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, bail};
+use anyhow::bail;
 
-use super::obj::HashEncoder;
+use super::HashEncoder;
 use crate::utils;
 
 pub struct ObjLocker {
@@ -14,21 +14,25 @@ pub struct ObjLocker {
 }
 
 impl ObjLocker {
-    pub fn new(dir: &Path) -> Result<Self> {
+    pub fn new(dir: &Path) -> anyhow::Result<Self> {
         Ok(Self {
             dir: dir.to_owned(),
         })
     }
 
-    pub fn lock(&self, obj: &OsStr) -> Result<ObjLock> {
+    pub fn lock(&self, obj: impl AsRef<OsStr>) -> anyhow::Result<Option<ObjLock>> {
+        let obj = obj.as_ref();
         let Some(lock) = ObjLock::lock_name(obj) else {
             bail!("invalid object ID `{}`", obj.display());
         };
 
         utils::ensure_dir_exists("lock directory", &self.dir)?;
         let file = File::create(self.dir.join(lock))?;
-        file.try_lock()?;
-        Ok(ObjLock { file })
+        match file.try_lock() {
+            Ok(_) => Ok(Some(ObjLock { file })),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
