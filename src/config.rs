@@ -507,7 +507,7 @@ impl<'a> Cfg<'a> {
     }
 
     pub(crate) fn ensure_toolchains_dir(&self) -> Result<(), anyhow::Error> {
-        utils::ensure_dir_exists("toolchains", &self.toolchains_dir)?;
+        utils::ensure_dir_exists("toolchains", &self.refs_dir)?;
         Ok(())
     }
 
