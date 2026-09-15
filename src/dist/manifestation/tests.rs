@@ -511,6 +511,7 @@ impl TestContext {
         add_components.append(&mut profile_components);
 
         let changes = Changes {
+            desc: &self.toolchain,
             explicit_add_components: add_components,
             remove_components: remove.to_owned(),
         };

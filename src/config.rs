@@ -17,7 +17,7 @@ use crate::{
     cli::{common, self_update::SelfUpdateMode},
     dist::{
         self, DistOptions, PartialTargetTuple, PartialToolchainDesc, Profile, Switch, TargetTuple,
-        ToolchainDesc,
+        ToolchainDesc, component::ObjLocker,
     },
     errors::RustupError,
     fallback_settings::FallbackSettings,
@@ -155,7 +155,9 @@ impl<T: Display> EnsureInstalled<T> {
         // If we're already in a recursion, or we haven't just installed the active toolchain, then
         // don't print the warning.
         let recursions = process.var("RUST_RECURSION_COUNT");
-        if recursions.is_ok_and(|it| it != "0") || !matches!(self.status, UpdateStatus::Installed) {
+        if recursions.is_ok_and(|it| it != "0")
+            || !matches!(self.status, UpdateStatus::Installed { .. })
+        {
             return;
         }
 
@@ -319,6 +321,7 @@ pub(crate) struct Cfg<'a> {
     state_file: StateFile,
     fallback_settings: Option<FallbackSettings>,
     pub toolchains_dir: PathBuf,
+    pub refs_dir: PathBuf,
     update_hash_dir: PathBuf,
     pub download_dir: PathBuf,
     pub toolchain_override: Option<ResolvableToolchainName>,
@@ -377,7 +380,8 @@ impl<'a> Cfg<'a> {
         #[cfg(windows)]
         let fallback_settings = None;
 
-        let toolchains_dir = rustup_dir.join("toolchains");
+        let toolchains_dir = rustup_dir.join("heap");
+        let refs_dir = rustup_dir.join("toolchains");
         let update_hash_dir = rustup_dir.join("update-hashes");
         let download_dir = rustup_dir.join("downloads");
 
@@ -397,6 +401,7 @@ impl<'a> Cfg<'a> {
             state_file,
             fallback_settings,
             toolchains_dir,
+            refs_dir,
             update_hash_dir,
             download_dir,
             toolchain_override: None,
@@ -503,7 +508,7 @@ impl<'a> Cfg<'a> {
     }
 
     pub(crate) fn ensure_toolchains_dir(&self) -> Result<(), anyhow::Error> {
-        utils::ensure_dir_exists("toolchains", &self.toolchains_dir)?;
+        utils::ensure_dir_exists("toolchains", &self.refs_dir)?;
         Ok(())
     }
 
@@ -552,7 +557,7 @@ impl<'a> Cfg<'a> {
                     "this upgrade will remove all existing toolchains; you will need to reinstall them"
                 );
 
-                let dirs = utils::read_dir("toolchains", &self.toolchains_dir)?;
+                let dirs = utils::read_dir("toolchains", &self.refs_dir)?;
                 for dir in dirs {
                     let dir = dir.context("IO Error reading toolchains")?;
                     utils::remove_dir("toolchain", &dir.path())?;
@@ -987,12 +992,12 @@ impl<'a> Cfg<'a> {
     /// the toolchains directory. These names may be returned in any order.
     #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn list_toolchains(&self, quiet: bool) -> anyhow::Result<Vec<ToolchainName>> {
-        if !utils::is_directory(&self.toolchains_dir) {
+        if !utils::is_directory(&self.refs_dir) {
             return Ok(vec![]);
         }
 
         let mut toolchains = vec![];
-        for entry in utils::read_dir("toolchains", &self.toolchains_dir)? {
+        for entry in utils::read_dir("toolchain references", &self.refs_dir)? {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(e) => {
@@ -1079,10 +1084,10 @@ impl<'a> Cfg<'a> {
             .with(|s| Ok(default_host_tuple(s, self.process)))
     }
 
-    /// The path on disk of any concrete toolchain
-    pub(crate) fn toolchain_path(&self, toolchain: &LocalToolchainName) -> PathBuf {
+    /// The path on disk of any toolchain reference
+    pub(crate) fn ref_path(&self, toolchain: &LocalToolchainName) -> PathBuf {
         match toolchain {
-            LocalToolchainName::Named(name) => self.toolchains_dir.join(name.to_string()),
+            LocalToolchainName::Named(name) => self.refs_dir.join(name.to_string()),
             LocalToolchainName::Path(p) => p.to_path_buf(),
         }
     }
@@ -1148,6 +1153,10 @@ impl<'a> Cfg<'a> {
 
         Ok(())
     }
+
+    pub(crate) fn obj_locker(&self) -> anyhow::Result<ObjLocker> {
+        ObjLocker::new(&self.rustup_dir.join("locks"))
+    }
 }
 
 /// The root path of the release server, without the `/dist` suffix.
@@ -1179,6 +1188,7 @@ impl Debug for Cfg<'_> {
             state_file,
             fallback_settings,
             toolchains_dir,
+            refs_dir,
             update_hash_dir,
             download_dir,
             toolchain_override,
@@ -1198,6 +1208,7 @@ impl Debug for Cfg<'_> {
             .field("state_file", state_file)
             .field("fallback_settings", fallback_settings)
             .field("toolchains_dir", toolchains_dir)
+            .field("refs_dir", refs_dir)
             .field("update_hash_dir", update_hash_dir)
             .field("download_dir", download_dir)
             .field("toolchain_override", toolchain_override)
