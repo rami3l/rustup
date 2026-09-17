@@ -5,7 +5,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     ffi::OsStr,
-    fs,
+    fs, io,
 };
 
 pub use hash::HashEncoder;
@@ -33,16 +33,24 @@ pub(crate) fn gc<'a>(
     let heap = &cfg.toolchains_dir;
     let mut locks = match candidates {
         Some(candidates) => Either::Left(candidates.into_iter().map(Cow::Borrowed)),
-        None => Either::Right(utils::read_dir("toolchain objects", heap)?.filter_map(|e| {
-            let e = e.ok()?;
-            if !e.file_type().is_ok_and(|t| t.is_dir()) {
-                return None;
+        None => match utils::read_dir("toolchain objects", heap) {
+            Err(e) => {
+                return match e.downcast_ref::<io::Error>() {
+                    Some(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                    _ => Err(e),
+                };
             }
-            match e.file_name() {
-                f if f == "tmp" => None,
-                f => Some(Cow::Owned(f)),
-            }
-        })),
+            Ok(dir) => Either::Right(dir.filter_map(|e| {
+                let e = e.ok()?;
+                if !e.file_type().is_ok_and(|t| t.is_dir()) {
+                    return None;
+                }
+                match e.file_name() {
+                    f if f == "tmp" => None,
+                    f => Some(Cow::Owned(f)),
+                }
+            })),
+        },
     }
     .filter_map(|c| match locker.lock(&*c) {
         Ok(Some(lock)) => Some(Ok((c, lock))),
