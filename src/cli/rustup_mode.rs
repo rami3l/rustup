@@ -1551,9 +1551,13 @@ async fn target_remove(
         warn!("removing the last target; no build targets will be available");
     }
 
-    distributable
+    let status = distributable
         .remove_components(targets.into_iter().map(|c| Ok(Component::std(c))))
         .await?;
+    if let Some(obj) = status.into_obj() {
+        gc(Some([&*obj]), &cfg.obj_locker()?, cfg)?;
+    }
+
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1637,13 +1641,17 @@ async fn component_remove(
     let distributable = DistributableToolchain::from_partial(toolchain, cfg).await?;
     let target = get_target(target, &distributable);
 
-    distributable
+    let status = distributable
         .remove_components(
             components
                 .iter()
                 .map(|component| Component::try_new(component, &distributable, target.as_ref())),
         )
         .await?;
+    if let Some(obj) = status.into_obj() {
+        gc(Some([&*obj]), &cfg.obj_locker()?, cfg)?;
+    }
+
     Ok(ExitCode::SUCCESS)
 }
 

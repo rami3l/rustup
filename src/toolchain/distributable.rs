@@ -387,7 +387,7 @@ impl<'a> DistributableToolchain<'a> {
     pub(crate) async fn remove_components(
         &self,
         components: impl IntoIterator<Item = anyhow::Result<Component>>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<UpdateStatus> {
         let manifestation = self.get_manifestation()?;
         let config = manifestation.read_config()?.unwrap_or_default();
         let manifest = self.get_manifest()?;
@@ -439,7 +439,7 @@ impl<'a> DistributableToolchain<'a> {
         };
 
         let download_cfg = DownloadCfg::new(self.toolchain.cfg);
-        manifestation
+        let status = manifestation
             .update(manifest, changes, false, &download_cfg, &self.desc, false)
             .await?;
 
@@ -451,7 +451,7 @@ impl<'a> DistributableToolchain<'a> {
             .into());
         }
 
-        Ok(())
+        Ok(status)
     }
 
     pub async fn fetch_dist_manifest(&self) -> anyhow::Result<Option<Hashed<Manifest>>> {
