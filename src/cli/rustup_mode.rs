@@ -1691,7 +1691,9 @@ async fn toolchain_remove(cfg: &Cfg<'_>, opts: UninstallOpts) -> anyhow::Result<
         .flatten()
         .map(|(it, _)| it);
 
-    for toolchain_name in opts.toolchain {
+    let toolchains = opts.toolchain;
+    let mut gc_candidates = Vec::with_capacity(toolchains.len());
+    for toolchain_name in toolchains {
         let toolchain_name = toolchain_name.resolve(&cfg.default_host_tuple()?)?;
 
         if active_toolchain
@@ -1711,7 +1713,15 @@ async fn toolchain_remove(cfg: &Cfg<'_>, opts: UninstallOpts) -> anyhow::Result<
             );
         }
 
-        Toolchain::ensure_removed(cfg, toolchain_name.into())?;
+        gc_candidates.extend(Toolchain::ensure_removed(cfg, toolchain_name.into())?);
+    }
+
+    if !gc_candidates.is_empty() {
+        gc(
+            Some(gc_candidates.iter().map(|c| c.as_os_str())),
+            &cfg.obj_locker()?,
+            cfg,
+        )?;
     }
     Ok(ExitCode::SUCCESS)
 }
