@@ -1,8 +1,8 @@
 //! Installation from a Rust distribution server
 
 use std::{
-    collections::HashSet, env, fmt, io::Write, ops::Deref, path::PathBuf, str::FromStr,
-    sync::LazyLock,
+    collections::HashSet, env, ffi::OsString, fmt, io::Write, ops::Deref, path::PathBuf,
+    str::FromStr, sync::LazyLock,
 };
 
 use anyhow::{Context, anyhow};
@@ -29,7 +29,7 @@ pub mod download;
 use download::DownloadCfg;
 
 pub mod manifest;
-use manifest::{Component, Manifest as ManifestV2, ManifestWithHash};
+use manifest::{Component, Hashed, Manifest as ManifestV2, Manifest};
 
 pub mod manifestation;
 use manifestation::{Changes, Manifestation, UpdateStatus};
@@ -958,8 +958,8 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
     pub(crate) async fn install_into(
         &self,
         prefix: &InstallPrefix,
-        mut prefetched_manifest: Option<ManifestWithHash>,
-    ) -> anyhow::Result<Option<String>> {
+        mut prefetched_manifest: Option<Hashed<Manifest>>,
+    ) -> anyhow::Result<Option<Hashed<Option<OsString>>>> {
         let fresh_install = !prefix.path().exists();
         // fresh_install means the toolchain isn't present, but hash_exists means there is a stray hash file
         if fresh_install && self.update_hash.exists() {
@@ -1026,7 +1026,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
 
             let try_date_str = match (&toolchain.date, &manifest_result) {
                 (Some(date), _) => Some(date),
-                (None, Ok(Some(m))) => Some(&m.manifest.date),
+                (None, Ok(Some(m))) => Some(&m.inner.date),
                 _ => None,
             };
 
@@ -1130,14 +1130,14 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
         &self,
         toolchain: Option<&ToolchainDesc>,
         prefix: &InstallPrefix,
-        manifest_result: anyhow::Result<Option<ManifestWithHash>>,
-    ) -> anyhow::Result<Option<String>> {
+        manifest_result: anyhow::Result<Option<Hashed<Manifest>>>,
+    ) -> anyhow::Result<Option<Hashed<Option<OsString>>>> {
         let download = &self.dl_cfg;
         let toolchain = toolchain.unwrap_or(self.toolchain);
         let manifestation = Manifestation::open(prefix.clone(), toolchain.target.clone())?;
 
         match manifest_result {
-            Ok(Some(ManifestWithHash { manifest: m, hash })) => {
+            Ok(Some(Hashed { inner: m, hash })) => {
                 match m.get_rust_version() {
                     Ok(version) => info!("latest update on {} for version {version}", m.date),
                     Err(_) => info!("latest update on {}", m.date),
@@ -1187,6 +1187,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
                 explicit_add_components.sort();
 
                 let changes = Changes {
+                    desc: toolchain,
                     explicit_add_components,
                     remove_components: Vec::new(),
                 };
@@ -1196,7 +1197,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
                 {
                     Ok(status) => match status {
                         UpdateStatus::Unchanged => Ok(None),
-                        UpdateStatus::Changed => Ok(Some(hash)),
+                        UpdateStatus::Changed(obj) => Ok(Some(Hashed { inner: obj, hash })),
                     },
                     // Check for the variant by reference before we downcast with ownership,
                     // otherwise we'll drop implicit context bundled up in the original anyhow::Error.
@@ -1252,16 +1253,16 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
             })?;
 
         let result = manifestation
-            .update_v1(&manifest, &self.update_hash, download)
+            .update_v1(&manifest, &self.update_hash, toolchain, download)
             .await;
 
         // inspect, determine what context to add, then process afterwards.
         if let Err(e) = &result
             && let Some(RustupError::DownloadNotExists { .. }) = e.downcast_ref::<RustupError>()
         {
-            return result.with_context(|| {
+            return Err(result.unwrap_err().context({
                 format!("could not download nonexistent rust version `{toolchain}`")
-            });
+            }));
         }
 
         result
@@ -1271,7 +1272,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
         &self,
         prefix: &InstallPrefix,
         toolchain: &ToolchainDesc,
-    ) -> anyhow::Result<Option<ManifestWithHash>> {
+    ) -> anyhow::Result<Option<Hashed<Manifest>>> {
         self.dl_cfg
             .dl_v2_manifest(
                 // Skip the update hash when the installed manifest is missing or when components
