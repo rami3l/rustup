@@ -10,6 +10,7 @@
 //! does not remove any dirs created by it.
 
 use std::{
+    borrow::Cow,
     ffi::{OsStr, OsString},
     fs::{self, File},
     path::{Path, PathBuf},
@@ -103,9 +104,12 @@ impl Transaction {
             None
         };
 
+        let ref_dir = ref_dir
+            .canonicalize()
+            .map_or_else(|_| Cow::Borrowed(ref_dir), Cow::Owned);
         let tmp_ref = tmp_dir.join([OsStr::new(&tx_id), ref_name].join(OsStr::new("-")));
         utils::symlink_dir(
-            &diff_paths(heap, ref_dir)
+            &diff_paths(heap, &ref_dir)
                 .context("when calculating source of toolchain reference")?
                 .join(obj),
             &tmp_ref,
