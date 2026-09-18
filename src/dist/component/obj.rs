@@ -71,15 +71,15 @@ pub(crate) fn gc<'a>(
     }
 
     for obj in &reachable {
-        debug!(
-            "toolchain object `{}` is reachable and thus retained",
+        info!(
+            "toolchain object `{}` is reachable during GC, skipping its removal...",
             obj.display(),
         );
         locks.remove(obj.as_os_str());
     }
     for (obj, lock) in locks {
-        info!(
-            "toolchain object `{}` is unreachable, removing...",
+        debug!(
+            "toolchain object `{}` is unreachable during GC, removing...",
             obj.display(),
         );
         install::uninstall(&heap.join(&*obj))?;
