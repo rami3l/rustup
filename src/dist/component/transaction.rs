@@ -26,7 +26,7 @@ use crate::{
         prefix::{InstallPrefix, InstallPrefixWithOrigin},
         temp,
     },
-    utils,
+    utils::{self, raw},
 };
 
 /// A transaction is responsible for spawning a new toolchain in the toolchain directory.
@@ -86,10 +86,11 @@ impl Transaction {
         // TODO: From now on, a full upgrade should never involve removing all its components.
         // Instead, `prefix.orig` should be set straight to `None`. Essentially, a full upgrade or
         // full uninstallation will be disqualified from being a "modification".
-        let tmp_dir = heap.join("tmp");
-        utils::ensure_dir_exists("heap temporary directory", &tmp_dir)?;
+        let tmp_dir = heap.join("tmp").join(obj);
+        utils::ensure_dir_exists("object initialization directory", &tmp_dir)?;
 
-        let tmp_obj = tmp_dir.join(obj);
+        let tx_id = raw::random_string(8);
+        let tmp_obj = tmp_dir.join(&tx_id);
         let orig = if let Some(orig) = prefix.orig
             && let Ok(true) = orig.path().try_exists()
         {
@@ -102,7 +103,7 @@ impl Transaction {
             None
         };
 
-        let tmp_ref = tmp_dir.join([ref_name, obj].join(OsStr::new("-")));
+        let tmp_ref = tmp_dir.join([OsStr::new(&tx_id), ref_name].join(OsStr::new("-")));
         utils::symlink_dir(
             &diff_paths(heap, ref_dir)
                 .context("when calculating source of toolchain reference")?
