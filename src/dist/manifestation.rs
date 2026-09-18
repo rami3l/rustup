@@ -230,10 +230,9 @@ impl Manifestation {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_RETRIES);
 
-        let rustup_home = download_cfg.process.rustup_home()?;
+        let ref_ = prefix.path().to_owned();
         // TODO: Use a proper API for `process` after platform dir lands.
-        let heap_dir = rustup_home.join("heap");
-        let ref_ = rustup_home.join("toolchains").join(toolchain.to_string());
+        let heap_dir = download_cfg.process.rustup_home()?.join("heap");
 
         // Begin transaction
         let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
@@ -463,10 +462,9 @@ impl Manifestation {
 
         info!("installing component rust");
 
-        let rustup_home = dl_cfg.process.rustup_home()?;
+        let ref_ = self.installation.prefix().path().to_owned();
         // TODO: Use a proper API for `process` after platform dir lands.
-        let heap_dir = rustup_home.join("heap");
-        let ref_ = rustup_home.join("toolchains").join(toolchain.to_string());
+        let heap_dir = dl_cfg.process.rustup_home()?.join("heap");
 
         // Begin transaction
         let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
