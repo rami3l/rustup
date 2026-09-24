@@ -1,0 +1,55 @@
+name: bench
+
+on:
+  pull_request:
+    branches:
+      - "**"
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    permissions:
+      contents: read
+
+    runs-on: ubuntu-latest
+
+    env:
+      BENCHER_PROJECT: rustup
+      BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Valgrind
+        run: sudo apt install valgrind
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --default
+
+      - name: Setup bencher.dev
+        uses: bencherdev/bencher@main
+
+      - name: Install gungraun-runner
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: gungraun-runner
+
+      - name: Run and upload benchmarks
+        run: |
+          bencher run \
+            --project "$BENCHER_PROJECT" \
+            --key "$BENCHER_API_KEY" \
+            --branch "$GITHUB_REF_NAME" \
+            --hash "$GITHUB_SHA" \
+            --testbed ubuntu-latest \
+            --adapter rust_gungraun \
+            "cargo bench --features=test"

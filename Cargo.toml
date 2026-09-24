@@ -136,6 +136,7 @@ version = "0.61"
 
 [dev-dependencies]
 enum-map = "3.0.0"
+gungraun = "0.20.0"
 proptest = "1.1.0"
 rustls-webpki = { version = "0.103.3" }
 tokio-rustls = "0.26.4"
@@ -162,6 +163,10 @@ wildcard_imports = "warn"
 [lib]
 name = "rustup"
 path = "src/lib.rs"
+
+[[bench]]
+name = "bench"
+harness = false
 
 [profile.release]
 codegen-units = 1
