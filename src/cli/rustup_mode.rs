@@ -936,7 +936,7 @@ async fn default_(
                 cfg.set_default(None)?;
             }
             MaybeResolvableToolchainName::Some(ResolvableToolchainName::Custom(toolchain_name)) => {
-                Toolchain::new(cfg, toolchain_name.clone().into())?;
+                Toolchain::<LocalToolchainName>::new(cfg, toolchain_name.clone().into())?;
                 cfg.set_default(Some(&toolchain_name.into()))?;
             }
             MaybeResolvableToolchainName::Some(ResolvableToolchainName::Official(toolchain)) => {
@@ -1319,7 +1319,7 @@ async fn show(cfg: &Cfg<'_>, verbose: bool) -> anyhow::Result<ExitCode> {
         writeln!(t, "{toolchain_name}{CONTEXT}{status_str}{CONTEXT:#}")?;
 
         if verbose {
-            let toolchain = Toolchain::new(cfg, toolchain_name.into())?;
+            let toolchain = Toolchain::<LocalToolchainName>::new(cfg, toolchain_name.into())?;
             writeln!(
                 t,
                 "  {}\n  path: {}",
@@ -1345,16 +1345,18 @@ async fn show(cfg: &Cfg<'_>, verbose: bool) -> anyhow::Result<ExitCode> {
     writeln!(t.lock(), "name: {active_toolchain_name}")?;
     writeln!(t.lock(), "active because: {}", active_source.to_reason())?;
 
-    let active_toolchain = match Toolchain::new(cfg, active_toolchain_name.clone().into()) {
-        Ok(active_toolchain) => active_toolchain,
-        Err(
-            RustupError::ToolchainNotInstalled { .. } | RustupError::PathToolchainNotInstalled(..),
-        ) => {
-            info!("the active toolchain `{active_toolchain_name}` is not installed");
-            return Ok(ExitCode::SUCCESS);
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let active_toolchain =
+        match Toolchain::<LocalToolchainName>::new(cfg, active_toolchain_name.clone().into()) {
+            Ok(active_toolchain) => active_toolchain,
+            Err(
+                RustupError::ToolchainNotInstalled { .. }
+                | RustupError::PathToolchainNotInstalled(..),
+            ) => {
+                info!("the active toolchain `{active_toolchain_name}` is not installed");
+                return Ok(ExitCode::SUCCESS);
+            }
+            Err(e) => return Err(e.into()),
+        };
 
     if verbose {
         writeln!(t.lock(), "compiler: {}", active_toolchain.rustc_version())?;
@@ -1761,7 +1763,7 @@ async fn override_add(
         .clone()
         .resolve(cfg)?
         .resolve(&cfg.default_host_tuple()?)?;
-    match Toolchain::new(cfg, toolchain_name.clone().into()) {
+    match Toolchain::<LocalToolchainName>::new(cfg, toolchain_name.clone().into()) {
         Ok(_) => {}
         Err(e @ RustupError::ToolchainNotInstalled { .. }) => match &toolchain_name {
             ToolchainName::Custom(_) => Err(e)?,

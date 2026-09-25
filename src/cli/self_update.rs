@@ -69,7 +69,8 @@ use crate::{
     process::Process,
     settings::SettingsFile,
     toolchain::{
-        DistributableToolchain, MaybeOfficialToolchainName, ResolvableToolchainName, Toolchain,
+        DistributableToolchain, LocalToolchainName, MaybeOfficialToolchainName,
+        ResolvableToolchainName, Toolchain,
     },
     utils::{self, ExitCode},
 };
@@ -274,7 +275,7 @@ impl InstallOpts<'_> {
             let desc = partial_desc.clone().resolve(&cfg.default_host_tuple()?)?;
             let options =
                 DistOptions::new(components, targets, &desc, cfg.get_profile()?, true, &cfg)?;
-            let status = if Toolchain::exists(&cfg, &desc.clone().into())? {
+            let status = if Toolchain::<LocalToolchainName>::exists(&cfg, &desc.clone().into())? {
                 warn!("Updating existing toolchain, profile choice will be ignored");
                 // If we have a partial install we might not be able to read content here. We could:
                 // - fail and folk have to delete the partially present toolchain to recover

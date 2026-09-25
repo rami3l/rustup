@@ -195,10 +195,7 @@ impl<'a> DistributableToolchain<'a> {
         let binary = binary.as_ref();
         assert!(binary == "cargo" || binary == "cargo.exe");
 
-        let src_file = self
-            .path()
-            .join("bin")
-            .join(format!("cargo{EXE_SUFFIX}"));
+        let src_file = self.path().join("bin").join(format!("cargo{EXE_SUFFIX}"));
 
         // MAJOR HACKS: Copy cargo.exe to its own directory on windows before
         // running it. This is so that the fallback cargo, when it in turn runs
@@ -332,12 +329,7 @@ impl<'a> DistributableToolchain<'a> {
                     .as_ref()
                     .expect("component target should be known");
                 let suggestion = TargetSuggestion::from_target(
-                    &self.name,
-                    target,
-                    &component,
-                    &config,
-                    &manifest,
-                    self.cfg,
+                    &self.name, target, &component, &config, &manifest, self.cfg,
                 );
                 return Err(RustupError::TargetNotInstalled {
                     desc: Box::new(self.name.clone()),

@@ -50,7 +50,7 @@ pub(crate) struct Toolchain<'a, T = LocalToolchainName> {
     path: PathBuf,
 }
 
-pub(crate) trait ToolchainNameLike: Clone + Display {
+pub(crate) trait ToolchainNameLike: Clone + Debug + Display {
     fn toolchain_name(&self) -> LocalToolchainName;
 }
 
@@ -123,7 +123,6 @@ impl<'a> Toolchain<'a, LocalToolchainName> {
 
         Err(anyhow!(source_err).context(format!("override toolchain '{name}' is not installed")))
     }
-
 }
 
 impl<'a, T: ToolchainNameLike> Toolchain<'a, T> {
@@ -457,7 +456,7 @@ impl<'a, T: ToolchainNameLike> Toolchain<'a, T> {
     }
 
     #[cfg_attr(feature="otel", tracing::instrument(err, fields(binary, recursion = self.cfg.process.var("RUST_RECURSION_COUNT").ok())))]
-    fn create_command<T: AsRef<OsStr> + Debug>(&self, binary: T) -> Result<Command, anyhow::Error> {
+    fn create_command<B: AsRef<OsStr> + Debug>(&self, binary: B) -> Result<Command, anyhow::Error> {
         // Create the path to this binary within the current toolchain sysroot
         let binary = if let Some(binary_str) = binary.as_ref().to_str() {
             if binary_str.to_lowercase().ends_with(EXE_SUFFIX) {
@@ -599,8 +598,8 @@ impl<'a> Toolchain<'a, LocalToolchainName> {
             LocalToolchainName::Named(t) => t,
             LocalToolchainName::Path(_) => bail!("Cannot remove a path based toolchain"),
         };
-        let fs_modified =
-            match Toolchain::<LocalToolchainName>::exists(cfg, &name.clone().into())? {
+        let fs_modified = match Toolchain::<LocalToolchainName>::exists(cfg, &name.clone().into())?
+        {
             true => {
                 info!("uninstalling toolchain {name}");
                 let installed_paths = match &name {
