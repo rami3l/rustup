@@ -188,7 +188,7 @@ fn show_channel_updates(
                 // this is a bit strange: we don't supply the version we
                 // presumably had (for Installed and Unchanged), so we query it
                 // again. Perhaps we can do better.
-                let version = match Toolchain::new(cfg, name.clone().into()) {
+                let version = match Toolchain::new(cfg, name.clone()) {
                     Ok(t) => t.rustc_version(),
                     Err(_) => String::from("(toolchain not installed)"),
                 };

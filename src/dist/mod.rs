@@ -941,7 +941,7 @@ impl<'cfg, 'a> DistOptions<'cfg, 'a> {
                         m.date,
                         // should rustc_version be a free function on a trait?
                         // note that prev_version can be junk if the rustc component is missing ...
-                        toolchain.toolchain.rustc_version(),
+                        toolchain.rustc_version(),
                     )
                 })
                 .ok();

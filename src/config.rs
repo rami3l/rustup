@@ -25,9 +25,9 @@ use crate::{
     process::Process,
     settings::{MetadataVersion, Settings, SettingsFile},
     toolchain::{
-        CustomToolchainName, DistributableToolchain, LocalToolchainName, Override,
-        PathBasedToolchainName, ResolvableLocalToolchainName, ResolvableToolchainName, Toolchain,
-        ToolchainName,
+        CustomToolchainName, DistributableToolchain, GenericToolchainName, LocalToolchainName,
+        Override, PathBasedToolchainName, ResolvableLocalToolchainName, ResolvableToolchainName,
+        Toolchain, ToolchainName,
     },
     utils,
 };
@@ -580,7 +580,7 @@ impl<'a> Cfg<'a> {
     pub(crate) fn find_default(&self) -> anyhow::Result<Option<Toolchain<'_>>> {
         Ok(self
             .get_default()?
-            .map(|n| Toolchain::new(self, n.into()))
+            .map(|n| Toolchain::<LocalToolchainName>::new(self, n.into()))
             .transpose()?)
     }
 
@@ -770,8 +770,8 @@ impl<'a> Cfg<'a> {
 
                     // XXX: this awkwardness deals with settings file being locked already
                     let toolchain_name = toolchain_name.resolve(&default_host)?;
-                    if !Toolchain::exists(self, &toolchain_name.clone().into())?
-                        && matches!(toolchain_name, ToolchainName::Custom(_))
+                    if matches!(toolchain_name, ToolchainName::Custom(_))
+                        && !toolchain_name.exists(self)?
                     {
                         bail!(
                             "custom toolchain '{}' specified in override file '{}' is not installed",
@@ -1082,14 +1082,6 @@ impl<'a> Cfg<'a> {
     pub(crate) fn default_host_tuple(&self) -> anyhow::Result<TargetTuple> {
         self.settings_file
             .with(|s| Ok(default_host_tuple(s, self.process)))
-    }
-
-    /// The path on disk of any concrete toolchain
-    pub(crate) fn toolchain_path(&self, toolchain: &LocalToolchainName) -> PathBuf {
-        match toolchain {
-            LocalToolchainName::Named(name) => self.toolchains_dir.join(name.to_string()),
-            LocalToolchainName::Path(p) => p.to_path_buf(),
-        }
     }
 
     /// Notifies a user with a hint whenever a new Rust release is available.

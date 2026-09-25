@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::{
     env::{self, consts::EXE_SUFFIX},
     ffi::{OsStr, OsString},
-    fmt::Debug,
+    fmt::{Debug, Display},
     fs,
     io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
@@ -23,7 +23,7 @@ use crate::{
     RustupError,
     config::{ActiveSource, Cfg, EnsureInstalled, InstalledPath},
     dist::{
-        DistOptions, PartialToolchainDesc, TargetTuple,
+        DistOptions, PartialToolchainDesc, TargetTuple, ToolchainDesc,
         component::{Component, Components},
         prefix::InstallPrefix,
     },
@@ -44,13 +44,107 @@ pub(crate) use names::{
 
 /// A toolchain installed on the local disk
 #[derive(Clone, Debug)]
-pub(crate) struct Toolchain<'a> {
+pub(crate) struct Toolchain<'a, T = LocalToolchainName> {
     pub(super) cfg: &'a Cfg<'a>,
-    name: LocalToolchainName,
+    pub(crate) name: T,
     path: PathBuf,
 }
 
-impl<'a> Toolchain<'a> {
+pub(crate) trait GenericToolchainName: Clone + Debug + Display {
+    fn path(&self, cfg: &Cfg<'_>) -> PathBuf;
+
+    /// Ok(True) if the toolchain exists. Ok(False) if the toolchain or its
+    /// containing directory don't exist. Err otherwise.
+    fn exists(&self, cfg: &Cfg<'_>) -> Result<bool, RustupError> {
+        let path = self.path(cfg);
+        // toolchain validation should have prevented a situation where there is
+        // no base dir, but defensive programming is defensive.
+        let parent = path.parent().ok_or_else(|| self.invalid_name_error())?;
+        let base_name = path.file_name().ok_or_else(|| self.invalid_name_error())?;
+        let parent_dir = match open_dir_following_links(parent) {
+            Ok(d) => d,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            e => e?,
+        };
+        let opened = OpenOptions::default()
+            .read(true)
+            .follow(true)
+            .open_dir_at(&parent_dir, base_name);
+        Ok(opened.is_ok())
+    }
+
+    fn as_official(&self) -> Option<&ToolchainDesc>;
+
+    fn invalid_name_error(&self) -> RustupError {
+        RustupError::InvalidToolchainName(self.to_string())
+    }
+
+    fn not_installed_error(&self, cfg: &Cfg<'_>) -> RustupError;
+}
+
+impl GenericToolchainName for LocalToolchainName {
+    fn path(&self, cfg: &Cfg<'_>) -> PathBuf {
+        match &self {
+            Self::Named(name) => name.path(cfg),
+            Self::Path(p) => p.to_path_buf(),
+        }
+    }
+
+    fn as_official(&self) -> Option<&ToolchainDesc> {
+        match self {
+            Self::Named(tc) => tc.as_official(),
+            _ => None,
+        }
+    }
+
+    fn not_installed_error(&self, cfg: &Cfg<'_>) -> RustupError {
+        match self.clone() {
+            Self::Named(name) => name.not_installed_error(cfg),
+            Self::Path(name) => RustupError::PathToolchainNotInstalled(name),
+        }
+    }
+}
+
+impl GenericToolchainName for ToolchainName {
+    fn path(&self, cfg: &Cfg<'_>) -> PathBuf {
+        cfg.toolchains_dir.join(self.to_string())
+    }
+
+    fn as_official(&self) -> Option<&ToolchainDesc> {
+        match self {
+            Self::Official(desc) => Some(desc),
+            _ => None,
+        }
+    }
+
+    fn not_installed_error(&self, cfg: &Cfg<'_>) -> RustupError {
+        let is_active = matches!(cfg.active_toolchain(), Ok(Some((t, _))) if &t == self);
+        RustupError::ToolchainNotInstalled {
+            name: self.clone(),
+            is_active,
+        }
+    }
+}
+
+impl GenericToolchainName for ToolchainDesc {
+    fn path(&self, cfg: &Cfg<'_>) -> PathBuf {
+        cfg.toolchains_dir.join(self.to_string())
+    }
+
+    fn as_official(&self) -> Option<&ToolchainDesc> {
+        Some(self)
+    }
+
+    fn not_installed_error(&self, cfg: &Cfg<'_>) -> RustupError {
+        let is_active = matches!(cfg.active_toolchain(), Ok(Some((LocalToolchainName::Named(ToolchainName::Official(t)), _))) if &t == self);
+        RustupError::ToolchainNotInstalled {
+            name: self.clone().into(),
+            is_active,
+        }
+    }
+}
+
+impl<'a> Toolchain<'a, LocalToolchainName> {
     pub(crate) async fn from_local(
         name: LocalToolchainName,
         install_if_missing: bool,
@@ -107,46 +201,20 @@ impl<'a> Toolchain<'a> {
 
         Err(anyhow!(source_err).context(format!("override toolchain '{name}' is not installed")))
     }
+}
 
-    pub(crate) fn new(cfg: &'a Cfg<'a>, name: LocalToolchainName) -> Result<Self, RustupError> {
-        let path = cfg.toolchain_path(&name);
-        if !Toolchain::exists(cfg, &name)? {
-            return Err(match name {
-                LocalToolchainName::Named(name) => {
-                    let is_active = matches!(cfg.active_toolchain(), Ok(Some((t, _))) if t == name);
-                    RustupError::ToolchainNotInstalled { name, is_active }
-                }
-                LocalToolchainName::Path(name) => RustupError::PathToolchainNotInstalled(name),
-            });
+impl<'a, T: GenericToolchainName> Toolchain<'a, T> {
+    pub(crate) fn new(cfg: &'a Cfg<'a>, name: T) -> Result<Self, RustupError> {
+        // let local_name = name.toolchain_name();
+        // let path = cfg.toolchain_path(&local_name);
+        let path = name.path(cfg);
+        if !name.exists(cfg)? {
+            return Err(name.not_installed_error(cfg));
         }
         Ok(Self { cfg, name, path })
     }
 
-    /// Ok(True) if the toolchain exists. Ok(False) if the toolchain or its
-    /// containing directory don't exist. Err otherwise.
-    pub(crate) fn exists(cfg: &Cfg<'_>, name: &LocalToolchainName) -> Result<bool, RustupError> {
-        let path = cfg.toolchain_path(name);
-        // toolchain validation should have prevented a situation where there is
-        // no base dir, but defensive programming is defensive.
-        let parent = path
-            .parent()
-            .ok_or_else(|| RustupError::InvalidToolchainName(name.to_string()))?;
-        let base_name = path
-            .file_name()
-            .ok_or_else(|| RustupError::InvalidToolchainName(name.to_string()))?;
-        let parent_dir = match open_dir_following_links(parent) {
-            Ok(d) => d,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
-            e => e?,
-        };
-        let opened = OpenOptions::default()
-            .read(true)
-            .follow(true)
-            .open_dir_at(&parent_dir, base_name);
-        Ok(opened.is_ok())
-    }
-
-    pub(crate) fn name(&self) -> &LocalToolchainName {
+    pub(crate) fn name(&self) -> &T {
         &self.name
     }
 
@@ -359,7 +427,7 @@ impl<'a> Toolchain<'a> {
     // Custom toolchains don't have cargo, so here we detect that situation and
     // try to find a different cargo.
     fn maybe_do_cargo_fallback(&self) -> anyhow::Result<Option<Command>> {
-        if let LocalToolchainName::Named(ToolchainName::Official(_)) = self.name() {
+        if self.name.as_official().is_some() {
             return Ok(None);
         }
 
@@ -433,7 +501,7 @@ impl<'a> Toolchain<'a> {
     }
 
     #[cfg_attr(feature="otel", tracing::instrument(err, fields(binary, recursion = self.cfg.process.var("RUST_RECURSION_COUNT").ok())))]
-    fn create_command<T: AsRef<OsStr> + Debug>(&self, binary: T) -> Result<Command, anyhow::Error> {
+    fn create_command<B: AsRef<OsStr> + Debug>(&self, binary: B) -> Result<Command, anyhow::Error> {
         // Create the path to this binary within the current toolchain sysroot
         let binary = if let Some(binary_str) = binary.as_ref().to_str() {
             if binary_str.to_lowercase().ends_with(EXE_SUFFIX) {
@@ -459,11 +527,12 @@ impl<'a> Toolchain<'a> {
                 .unwrap_or(0);
             if recursion_count > env_var::RUST_RECURSION_COUNT_MAX - 1 {
                 let binary_lossy: String = binary.to_string_lossy().into();
-                if matches!(
-                    &self.name,
-                    LocalToolchainName::Named(ToolchainName::Official(_))
-                ) {
-                    let distributable = DistributableToolchain::try_from(self)?;
+                if let Some(desc) = self.name.as_official() {
+                    let distributable = Toolchain {
+                        cfg: self.cfg,
+                        name: desc.clone(),
+                        path: self.path.clone(),
+                    };
                     // Design note: this is a bit of an awkward cast from
                     // general (toolchain) to more specialised (distributable);
                     // perhaps this function should something implemented on a
@@ -540,16 +609,39 @@ impl<'a> Toolchain<'a> {
         }
     }
 
+    /// Get the list of installed components for any toolchain
+    ///
+    /// NB: An assumption is made that custom toolchains always have a `rustlib/components` file
+    pub fn installed_components(&self) -> anyhow::Result<Vec<Component>> {
+        let prefix = InstallPrefix::from(self.path.clone());
+        Components::open(prefix)?.list()
+    }
+
+    /// Get the list of installed targets for any toolchain
+    pub fn installed_targets(&self) -> anyhow::Result<Vec<TargetTuple>> {
+        Ok(self
+            .installed_components()?
+            .into_iter()
+            .filter_map(|c| {
+                c.name()
+                    .strip_prefix("rust-std-")
+                    .map(|tuple| TargetTuple::new(tuple.to_string()))
+            })
+            .collect())
+    }
+}
+
+impl<'a> Toolchain<'a, LocalToolchainName> {
     /// Remove the toolchain from disk
     ///
     ///
     pub fn ensure_removed(cfg: &Cfg<'_>, name: LocalToolchainName) -> anyhow::Result<()> {
-        let path = cfg.toolchain_path(&name);
+        let path = name.path(cfg);
         let name = match name {
             LocalToolchainName::Named(t) => t,
             LocalToolchainName::Path(_) => bail!("Cannot remove a path based toolchain"),
         };
-        let fs_modified = match Self::exists(cfg, &name.clone().into())? {
+        let fs_modified = match name.exists(cfg)? {
             true => {
                 info!("uninstalling toolchain {name}");
                 let installed_paths = match &name {
@@ -589,26 +681,5 @@ impl<'a> Toolchain<'a> {
             info!("toolchain {name} uninstalled");
         }
         Ok(())
-    }
-
-    /// Get the list of installed components for any toolchain
-    ///
-    /// NB: An assumption is made that custom toolchains always have a `rustlib/components` file
-    pub fn installed_components(&self) -> anyhow::Result<Vec<Component>> {
-        let prefix = InstallPrefix::from(self.path.clone());
-        Components::open(prefix)?.list()
-    }
-
-    /// Get the list of installed targets for any toolchain
-    pub fn installed_targets(&self) -> anyhow::Result<Vec<TargetTuple>> {
-        Ok(self
-            .installed_components()?
-            .into_iter()
-            .filter_map(|c| {
-                c.name()
-                    .strip_prefix("rust-std-")
-                    .map(|tuple| TargetTuple::new(tuple.to_string()))
-            })
-            .collect())
     }
 }

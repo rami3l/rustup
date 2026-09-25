@@ -8,7 +8,7 @@ use crate::{
     config::Cfg,
     dist::{DistOptions, manifest::ManifestWithHash, prefix::InstallPrefix},
     errors::RustupError,
-    toolchain::{CustomToolchainName, LocalToolchainName, Toolchain},
+    toolchain::{CustomToolchainName, GenericToolchainName as _, LocalToolchainName},
     utils,
 };
 
@@ -65,7 +65,7 @@ impl InstallMethod<'_, '_> {
             }
         };
 
-        let toolchain_path = &cfg.toolchain_path(&toolchain);
+        let toolchain_path = &toolchain.path(cfg);
         debug!("toolchain directory: {}", toolchain_path.display());
         if toolchain_path.exists() && !matches!(self, Self::Dist { .. }) {
             uninstall(toolchain_path)?;
@@ -95,7 +95,7 @@ impl InstallMethod<'_, '_> {
         };
 
         // Final check, to ensure we're installed
-        if !Toolchain::exists(cfg, &toolchain)? {
+        if !toolchain.exists(cfg)? {
             return Err(RustupError::ToolchainNotInstallable(toolchain.to_string()).into());
         }
 

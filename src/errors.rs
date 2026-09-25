@@ -20,7 +20,7 @@ use crate::{
         config::Config as DistConfig,
         manifest::{Component, Manifest},
     },
-    toolchain::{PathBasedToolchainName, Toolchain, ToolchainName},
+    toolchain::{LocalToolchainName, PathBasedToolchainName, Toolchain, ToolchainName},
 };
 
 pub(crate) const DEFAULT_STABLE_HINT: &str = "help: run 'rustup default stable' to download the latest stable release of Rust and set it as your default toolchain.";
@@ -52,7 +52,9 @@ impl TargetSuggestion {
                 continue;
             }
 
-            let Ok(toolchain) = Toolchain::new(cfg, toolchain_name.clone().into()) else {
+            let Ok(toolchain) =
+                Toolchain::<LocalToolchainName>::new(cfg, toolchain_name.clone().into())
+            else {
                 continue;
             };
             let Ok(installed_targets) = toolchain.installed_targets() else {
