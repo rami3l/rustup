@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use platforms::Platform;
 
 use super::{
-    Toolchain,
+    Toolchain, ToolchainNameLike,
     names::{LocalToolchainName, ToolchainName},
 };
 use crate::{
@@ -49,20 +49,6 @@ impl<'a> DistributableToolchain<'a> {
         )?)
     }
 
-    pub(crate) fn new(cfg: &'a Cfg<'a>, desc: ToolchainDesc) -> Result<Self, RustupError> {
-        let Toolchain { cfg, path, .. } =
-            Toolchain::<'a, LocalToolchainName>::new(cfg, desc.clone().into())?;
-        Ok(Self {
-            cfg,
-            name: desc,
-            path,
-        })
-    }
-
-    pub(crate) fn desc(&self) -> &ToolchainDesc {
-        &self.name
-    }
-
     pub(crate) async fn add_components(
         &self,
         components: impl IntoIterator<Item = anyhow::Result<Component>>,
@@ -76,7 +62,7 @@ impl<'a> DistributableToolchain<'a> {
             .expect("manifest should contain a rust package");
         let targ_pkg = rust_pkg
             .targets
-            .get(&self.desc().target)
+            .get(&self.name.target)
             .expect("installed manifest should have a known target");
 
         let components = components.into_iter();
@@ -101,8 +87,8 @@ impl<'a> DistributableToolchain<'a> {
 
             let config = manifestation.read_config()?.unwrap_or_default();
             let suggestion =
-                component_suggestion(&self.desc, &component, &config, &manifest, false);
-            let desc = self.desc.clone();
+                component_suggestion(&self.name, &component, &config, &manifest, false);
+            let desc = self.name.clone();
 
             if targ_pkg
                 .components
@@ -140,7 +126,7 @@ impl<'a> DistributableToolchain<'a> {
 
         let download_cfg = DownloadCfg::new(self.cfg);
         manifestation
-            .update(manifest, changes, false, &download_cfg, &self.desc, false)
+            .update(manifest, changes, false, &download_cfg, &self.name, false)
             .await?;
 
         Ok(())
@@ -150,7 +136,7 @@ impl<'a> DistributableToolchain<'a> {
         let manifestation = self.get_manifestation()?;
         let config = manifestation.read_config()?.unwrap_or_default();
         let manifest = self.get_manifest()?;
-        manifest.query_components(self.desc(), &config)
+        manifest.query_components(&self.name, &config)
     }
 
     /// Are all the components installed in this distribution
@@ -175,7 +161,7 @@ impl<'a> DistributableToolchain<'a> {
         };
 
         let config = manifestation.read_config()?.unwrap_or_default();
-        let installed_components = manifest.query_components(&self.desc, &config)?;
+        let installed_components = manifest.query_components(&self.name, &config)?;
         // check if all the components we want are installed
         let wanted_components = components.iter().all(|name| {
             installed_components.iter().any(|status| {
@@ -200,17 +186,16 @@ impl<'a> DistributableToolchain<'a> {
 
     /// Create a command as a fallback for another toolchain. This is used
     /// to give custom toolchains access to cargo
-    pub fn create_fallback_command<T: AsRef<OsStr>>(
+    pub fn create_fallback_command<T: AsRef<OsStr>, N: ToolchainNameLike>(
         &self,
         binary: T,
-        installed_primary: &Toolchain<'_>,
+        installed_primary: &Toolchain<'_, N>,
     ) -> Result<Command, anyhow::Error> {
         // With the hacks below this only works for cargo atm
         let binary = binary.as_ref();
         assert!(binary == "cargo" || binary == "cargo.exe");
 
         let src_file = self
-            .toolchain
             .path()
             .join("bin")
             .join(format!("cargo{EXE_SUFFIX}"));
@@ -228,7 +213,7 @@ impl<'a> DistributableToolchain<'a> {
         // the documentation for the lpCommandLine argument of CreateProcess.
         #[cfg(windows)]
         let exe_path = {
-            let fallback_dir = self.toolchain.cfg.rustup_dir.join("fallback");
+            let fallback_dir = self.cfg.rustup_dir.join("fallback");
             fs::create_dir_all(&fallback_dir)
                 .context("unable to create dir to hold fallback exe")?;
             let fallback_file = fallback_dir.join("cargo.exe");
@@ -249,8 +234,8 @@ impl<'a> DistributableToolchain<'a> {
 
     #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn get_manifestation(&self) -> anyhow::Result<Manifestation> {
-        let prefix = InstallPrefix::from(self.toolchain.path());
-        Manifestation::open(prefix, self.desc.target.clone())
+        let prefix = InstallPrefix::from(self.path());
+        Manifestation::open(prefix, self.name.target.clone())
     }
 
     /// Get the manifest associated with this distribution
@@ -260,23 +245,23 @@ impl<'a> DistributableToolchain<'a> {
             .load_manifest()
             .transpose()
             .unwrap_or_else(|| match self.guess_v1_manifest() {
-                true => Err(RustupError::ComponentsUnsupportedV1(self.desc.to_string()).into()),
-                false => Err(RustupError::MissingManifest(self.desc.clone()).into()),
+                true => Err(RustupError::ComponentsUnsupportedV1(self.name.to_string()).into()),
+                false => Err(RustupError::MissingManifest(self.name.clone()).into()),
             })
     }
 
     /// Guess whether this is a V1 or V2 manifest distribution.
     pub(crate) fn guess_v1_manifest(&self) -> bool {
-        InstallPrefix::from(self.toolchain.path().to_owned()).guess_v1_manifest()
+        InstallPrefix::from(self.path().to_owned()).guess_v1_manifest()
     }
 
     pub fn recursion_error(&self, binary_lossy: String) -> Result<Infallible, anyhow::Error> {
-        let prefix = InstallPrefix::from(self.toolchain.path());
-        let manifestation = Manifestation::open(prefix, self.desc.target.clone())?;
+        let prefix = InstallPrefix::from(self.path());
+        let manifestation = Manifestation::open(prefix, self.name.target.clone())?;
         let manifest = self.get_manifest()?;
         let config = manifestation.read_config()?.unwrap_or_default();
-        let component_statuses = manifest.query_components(&self.desc, &config)?;
-        let desc = &self.desc;
+        let component_statuses = manifest.query_components(&self.name, &config)?;
+        let desc = &self.name;
         if let Some(component_name) = component_for_bin(&binary_lossy) {
             let component_status = component_statuses
                 .iter()
@@ -293,9 +278,9 @@ impl<'a> DistributableToolchain<'a> {
                 ))
             } else {
                 // available, not installed, recommend installation
-                let selector = match self.toolchain.cfg.get_default()? {
-                    Some(ToolchainName::Official(n)) if n == self.desc => String::new(),
-                    _ => format!("--toolchain {} ", self.toolchain.name()),
+                let selector = match self.cfg.get_default()? {
+                    Some(ToolchainName::Official(n)) if n == self.name => String::new(),
+                    _ => format!("--toolchain {} ", self.name),
                 };
                 Err(anyhow!(
                     "'{binary_lossy}' is not installed for the toolchain '{desc}'.\nhelp: run `rustup component add {selector}{component_name}` to install it"
@@ -347,22 +332,22 @@ impl<'a> DistributableToolchain<'a> {
                     .as_ref()
                     .expect("component target should be known");
                 let suggestion = TargetSuggestion::from_target(
-                    &self.desc,
+                    &self.name,
                     target,
                     &component,
                     &config,
                     &manifest,
-                    self.toolchain.cfg,
+                    self.cfg,
                 );
                 return Err(RustupError::TargetNotInstalled {
-                    desc: Box::new(self.desc.clone()),
+                    desc: Box::new(self.name.clone()),
                     target: target.clone(),
                     suggestion,
                 }
                 .into());
             }
 
-            let suggestion = component_suggestion(&self.desc, &component, &config, &manifest, true);
+            let suggestion = component_suggestion(&self.name, &component, &config, &manifest, true);
 
             unknown_components.push(UnknownComponentInfo {
                 name: manifest.short_name(&component).to_string(),
@@ -376,14 +361,14 @@ impl<'a> DistributableToolchain<'a> {
             remove_components: renamed_components,
         };
 
-        let download_cfg = DownloadCfg::new(self.toolchain.cfg);
+        let download_cfg = DownloadCfg::new(self.cfg);
         manifestation
-            .update(manifest, changes, false, &download_cfg, &self.desc, false)
+            .update(manifest, changes, false, &download_cfg, &self.name, false)
             .await?;
 
         if !unknown_components.is_empty() {
             return Err(RustupError::UnknownComponents {
-                desc: self.desc().clone(),
+                desc: self.name.clone(),
                 components: unknown_components,
             }
             .into());
@@ -393,14 +378,14 @@ impl<'a> DistributableToolchain<'a> {
     }
 
     pub async fn fetch_dist_manifest(&self) -> anyhow::Result<Option<ManifestWithHash>> {
-        let prefix = InstallPrefix::from(self.toolchain.path());
+        let prefix = InstallPrefix::from(self.path());
         let update_hash = if prefix.dist_manifest().is_some() {
-            Some(self.toolchain.cfg.get_hash_file(&self.desc, false)?)
+            Some(self.cfg.get_hash_file(&self.name, false)?)
         } else {
             None
         };
-        DownloadCfg::new(self.toolchain.cfg)
-            .dl_v2_manifest(update_hash.as_deref(), &self.desc, self.toolchain.cfg)
+        DownloadCfg::new(self.cfg)
+            .dl_v2_manifest(update_hash.as_deref(), &self.name, self.cfg)
             .await
     }
 
@@ -418,8 +403,9 @@ impl<'a> TryFrom<&Toolchain<'a>> for DistributableToolchain<'a> {
     fn try_from(value: &Toolchain<'a>) -> Result<Self, Self::Error> {
         match value.name() {
             LocalToolchainName::Named(ToolchainName::Official(desc)) => Ok(Self {
-                toolchain: value.clone(),
-                desc: desc.clone(),
+                cfg: value.cfg,
+                name: desc.clone(),
+                path: value.path.clone(),
             }),
             n => Err(RustupError::ComponentsUnsupported(n.to_string())),
         }
@@ -428,6 +414,11 @@ impl<'a> TryFrom<&Toolchain<'a>> for DistributableToolchain<'a> {
 
 impl<'a> From<DistributableToolchain<'a>> for Toolchain<'a> {
     fn from(value: DistributableToolchain<'a>) -> Self {
-        value.toolchain
+        let Toolchain { cfg, name, path } = value;
+        Self {
+            cfg,
+            name: name.into(),
+            path,
+        }
     }
 }

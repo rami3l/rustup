@@ -202,8 +202,8 @@ pub(crate) async fn doc(
     {
         info!(
             "`rust-docs` not installed in toolchain `{}`\nhelp: run `rustup component add --toolchain {} rust-docs` to install it",
-            distributable.desc(),
-            distributable.desc()
+            &distributable.name,
+            &distributable.name
         );
         return Err(anyhow!(
             "unable to view documentation which is not installed"

@@ -1528,7 +1528,7 @@ async fn target_remove(
         );
     }
 
-    let mut remaining_targets = distributable.toolchain.installed_targets()?;
+    let mut remaining_targets = distributable.installed_targets()?;
     remaining_targets.retain(|it| !targets.contains(it));
     if remaining_targets.is_empty() {
         warn!("removing the last target; no build targets will be available");
@@ -1604,7 +1604,7 @@ fn get_target(
 ) -> Option<TargetTuple> {
     target
         .map(TargetTuple::new)
-        .or_else(|| Some(distributable.desc().target.clone()))
+        .or_else(|| Some(distributable.name.target.clone()))
 }
 
 async fn component_remove(

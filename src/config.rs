@@ -27,7 +27,7 @@ use crate::{
     toolchain::{
         CustomToolchainName, DistributableToolchain, LocalToolchainName, Override,
         PathBasedToolchainName, ResolvableLocalToolchainName, ResolvableToolchainName, Toolchain,
-        ToolchainName,
+        ToolchainName, ToolchainNameLike,
     },
     utils,
 };
@@ -1085,8 +1085,9 @@ impl<'a> Cfg<'a> {
     }
 
     /// The path on disk of any concrete toolchain
-    pub(crate) fn toolchain_path(&self, toolchain: &LocalToolchainName) -> PathBuf {
-        match toolchain {
+    pub(crate) fn toolchain_path(&self, toolchain: &impl ToolchainNameLike) -> PathBuf {
+        let toolchain = toolchain.toolchain_name();
+        match &toolchain {
             LocalToolchainName::Named(name) => self.toolchains_dir.join(name.to_string()),
             LocalToolchainName::Path(p) => p.to_path_buf(),
         }
