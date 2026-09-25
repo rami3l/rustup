@@ -44,9 +44,9 @@ pub(crate) use names::{
 
 /// A toolchain installed on the local disk
 #[derive(Clone, Debug)]
-pub(crate) struct Toolchain<'a> {
+pub(crate) struct Toolchain<'a, T = LocalToolchainName> {
     pub(super) cfg: &'a Cfg<'a>,
-    name: LocalToolchainName,
+    name: T,
     path: PathBuf,
 }
 

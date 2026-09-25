@@ -25,12 +25,7 @@ use crate::{
     install::InstallMethod,
 };
 
-/// An official toolchain installed on the local disk
-#[derive(Debug)]
-pub(crate) struct DistributableToolchain<'a> {
-    pub(crate) toolchain: Toolchain<'a>,
-    desc: ToolchainDesc,
-}
+pub(crate) type DistributableToolchain<'a> = Toolchain<'a, ToolchainDesc>;
 
 impl<'a> DistributableToolchain<'a> {
     #[tracing::instrument(level = "trace", err(level = "trace"), skip_all)]
@@ -55,11 +50,17 @@ impl<'a> DistributableToolchain<'a> {
     }
 
     pub(crate) fn new(cfg: &'a Cfg<'a>, desc: ToolchainDesc) -> Result<Self, RustupError> {
-        Toolchain::new(cfg, desc.clone().into()).map(|toolchain| Self { toolchain, desc })
+        let Toolchain { cfg, path, .. } =
+            Toolchain::<'a, LocalToolchainName>::new(cfg, desc.clone().into())?;
+        Ok(Self {
+            cfg,
+            name: desc,
+            path,
+        })
     }
 
     pub(crate) fn desc(&self) -> &ToolchainDesc {
-        &self.desc
+        &self.name
     }
 
     pub(crate) async fn add_components(
@@ -75,7 +76,7 @@ impl<'a> DistributableToolchain<'a> {
             .expect("manifest should contain a rust package");
         let targ_pkg = rust_pkg
             .targets
-            .get(&self.desc.target)
+            .get(&self.desc().target)
             .expect("installed manifest should have a known target");
 
         let components = components.into_iter();
@@ -137,7 +138,7 @@ impl<'a> DistributableToolchain<'a> {
             remove_components: vec![],
         };
 
-        let download_cfg = DownloadCfg::new(self.toolchain.cfg);
+        let download_cfg = DownloadCfg::new(self.cfg);
         manifestation
             .update(manifest, changes, false, &download_cfg, &self.desc, false)
             .await?;
