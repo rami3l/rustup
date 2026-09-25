@@ -109,7 +109,7 @@ impl<'a> Toolchain<'a> {
     }
 
     pub(crate) fn new(cfg: &'a Cfg<'a>, name: LocalToolchainName) -> Result<Self, RustupError> {
-        let path = cfg.toolchain_path(&name);
+        let path = cfg.ref_path(&name);
         if !Toolchain::exists(cfg, &name)? {
             return Err(match name {
                 LocalToolchainName::Named(name) => {
@@ -125,7 +125,7 @@ impl<'a> Toolchain<'a> {
     /// Ok(True) if the toolchain exists. Ok(False) if the toolchain or its
     /// containing directory don't exist. Err otherwise.
     pub(crate) fn exists(cfg: &Cfg<'_>, name: &LocalToolchainName) -> Result<bool, RustupError> {
-        let path = cfg.toolchain_path(name);
+        let path = cfg.ref_path(name);
         // toolchain validation should have prevented a situation where there is
         // no base dir, but defensive programming is defensive.
         let parent = path
@@ -543,18 +543,33 @@ impl<'a> Toolchain<'a> {
     /// Remove the toolchain from disk
     ///
     ///
-    pub fn ensure_removed(cfg: &Cfg<'_>, name: LocalToolchainName) -> anyhow::Result<()> {
-        let path = cfg.toolchain_path(&name);
+    pub fn ensure_removed(
+        cfg: &Cfg<'_>,
+        name: LocalToolchainName,
+    ) -> anyhow::Result<Option<OsString>> {
+        // TODO: We should really properly name this `Option<OsString>` thing.
+        let path = cfg.ref_path(&name);
         let name = match name {
             LocalToolchainName::Named(t) => t,
             LocalToolchainName::Path(_) => bail!("Cannot remove a path based toolchain"),
         };
+        let mut obj = None;
         let fs_modified = match Self::exists(cfg, &name.clone().into())? {
             true => {
                 info!("uninstalling toolchain {name}");
                 let installed_paths = match &name {
                     ToolchainName::Custom(_) => Ok(vec![InstalledPath::Dir { path: &path }]),
-                    ToolchainName::Official(desc) => cfg.installed_paths(desc, &path),
+                    ToolchainName::Official(desc) => {
+                        // TODO: Consider make this part of `Self::exists()`?
+                        obj = Some(
+                            path.canonicalize()
+                                .context("failed to retrieve object path from reference")?
+                                .file_name()
+                                .context("toolchain path has no file name")?
+                                .to_owned(),
+                        );
+                        cfg.installed_paths(desc, &path)
+                    }
                 }?;
                 for path in installed_paths {
                     match path {
@@ -588,7 +603,7 @@ impl<'a> Toolchain<'a> {
         if !path.is_symlink() && !path.exists() && fs_modified {
             info!("toolchain {name} uninstalled");
         }
-        Ok(())
+        Ok(obj)
     }
 
     /// Get the list of installed components for any toolchain

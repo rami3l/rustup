@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use twox_hash::XxHash64;
+
+use super::{component::HashEncoder, manifestation::Changes};
 use crate::utils;
 
 /// The relative path to the manifest directory in a Rust installation,
@@ -13,10 +16,73 @@ const REL_MANIFEST_DIR: &str = match std::path::MAIN_SEPARATOR {
 static V1_COMMON_COMPONENT_LIST: &[&str] = &["cargo", "rustc", "rust-docs"];
 pub(crate) const DIST_MANIFEST: &str = "multirust-channel-manifest.toml";
 
+/// Describes the target of an installation.
+///
+/// This struct is composed of a final destination path and an original source path. When the
+/// installation is a modification of an existing installation, the origin source path corresponds
+/// to the path of that installation. Otherwise, the origin source path is `None`.
+#[derive(Clone, Debug)]
+pub struct InstallPrefixWithOrigin<'a> {
+    pub dest: InstallPrefix,
+    pub orig: Option<&'a InstallPrefix>,
+}
+
+impl<'a> InstallPrefixWithOrigin<'a> {
+    /// Generates a new installation prefix with the given original prefix and changes.
+    ///
+    /// # Note
+    ///
+    /// In the "process safe rustup" proposal, we assume that the install prefix should have
+    /// a base name that looks like
+    /// `<readable-short-name>-<xxhash-rustc-ver>-<xxhash-component-list>`, with `xxhash*`es
+    /// falling into [`HashEncoder::ALPHABET`].
+    ///
+    /// For the first stage where A/B partitioning is used, we change the address format to
+    /// one of the following:
+    ///
+    /// ```
+    /// <ref-short-name>-<xxhash-short-name>-a
+    /// <ref-short-name>-<xxhash-short-name>-b
+    /// ```
+    ///
+    /// ... where `ref-short-name` looks like `stableaarch64appledarwin`
+    ///
+    /// When flipping the active partition, if the original prefix base name doesn't match the above
+    /// format, we consider the current active partition to be `a`.
+    pub fn new(orig: Option<&'a InstallPrefix>, changes: &Changes<'_>, heap_dir: &Path) -> Self {
+        let orig_obj = orig.map(|o| {
+            o.path
+                .file_name()
+                .expect("installation prefix should have a base name")
+                .to_string_lossy()
+        });
+
+        // TODO: When real content addressing is implemented, a special scheme should be used for
+        // the address formats of toolchains on v1 manifests because the latter don't have the
+        // notion of component sets. Now we are always using A/B partitioning so this doesn't
+        // matter.
+        let parts = orig_obj.as_deref().and_then(|o| o.rsplit_once('-'));
+        let (name, partition) = match parts {
+            Some((n, p)) => (n, if p == "a" { "b" } else { "a" }),
+            None => {
+                const SEED: u64 = 0xfeed_c001_1ced_7ea5;
+                let disp_name = changes.desc.to_string().replace(['-', '_'], "");
+                let hash = HashEncoder::encode(XxHash64::oneshot(SEED, disp_name.as_bytes()));
+                (&*[disp_name, hash].join("-"), "b")
+            }
+        };
+        Self {
+            orig,
+            dest: InstallPrefix::from(heap_dir.join([name, partition].join("-"))),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct InstallPrefix {
     path: PathBuf,
 }
+
 impl InstallPrefix {
     pub fn path(&self) -> &Path {
         &self.path

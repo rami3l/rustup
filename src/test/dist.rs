@@ -6,6 +6,7 @@ use std::{
     fs::{self, File},
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    str::FromStr as _,
     sync::{Arc, LazyLock, Mutex},
 };
 
@@ -17,18 +18,18 @@ use super::{
 };
 use crate::{
     dist::{
-        DEFAULT_DIST_SERVER, Profile, TargetTuple,
-        component::{Components, DirectoryPackage, Transaction},
+        DEFAULT_DIST_SERVER, Profile, TargetTuple, ToolchainDesc,
+        component::{Components, DirectoryPackage, ObjLocker, Transaction},
         manifest::{
             Component, CompressionKind, HashedBinary, Manifest, ManifestVersion, Package,
             PackageTargets, Renamed, TargetedPackage,
         },
-        prefix::InstallPrefix,
+        manifestation::Changes,
+        prefix::{InstallPrefix, InstallPrefixWithOrigin},
         temp,
     },
     process::TestProcess,
 };
-
 pub struct DistContext {
     pub pkg_dir: tempfile::TempDir,
     pub inst_dir: tempfile::TempDir,
@@ -46,7 +47,7 @@ impl DistContext {
         }
 
         let inst_dir = tempfile::Builder::new().prefix("rustup").tempdir()?;
-        let prefix = InstallPrefix::from(inst_dir.path().to_owned());
+        let prefix = InstallPrefix::from(inst_dir.path().join("prefix"));
         let tmp_dir = tempfile::Builder::new().prefix("rustup").tempdir()?;
 
         Ok(Self {
@@ -63,18 +64,33 @@ impl DistContext {
     }
 
     pub fn start(&self) -> anyhow::Result<(Transaction, Components, DirectoryPackage<&Path>)> {
-        let tx = self.transaction();
+        let tx = self.transaction()?;
         let components = Components::open(self.prefix.clone())?;
         let pkg = DirectoryPackage::new(self.pkg_dir.path(), true)?;
         Ok((tx, components, pkg))
     }
 
-    pub fn transaction(&self) -> Transaction {
-        Transaction::new(
-            self.prefix.clone(),
+    pub fn transaction(&self) -> anyhow::Result<Transaction> {
+        let toolchain = "stable-x86_64-unknown-linux-gnu";
+        let tmp_dir = self._tmp_dir.path();
+
+        let heap_dir = tmp_dir.join("heap");
+        let ref_ = self.prefix.path().to_owned();
+
+        let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
+        let tx = Transaction::new(
+            ref_,
+            InstallPrefixWithOrigin::new(
+                orig.as_ref(),
+                &Changes::empty(&ToolchainDesc::from_str(toolchain)?),
+                &heap_dir,
+            ),
             self.cx.clone(),
+            &heap_dir,
+            &ObjLocker::new(&tmp_dir.join("locks"))?,
             self.tp.process.permit_copy_rename(),
-        )
+        )?;
+        Ok(tx)
     }
 }
 

@@ -1,12 +1,16 @@
 //! Installation and upgrade of both distribution-managed and local
 //! toolchains
-use std::path::Path;
+use std::{ffi::OsString, path::Path};
 
 use tracing::debug;
 
 use crate::{
     config::Cfg,
-    dist::{DistOptions, manifest::ManifestWithHash, prefix::InstallPrefix},
+    dist::{
+        DistOptions,
+        manifest::{Hashed, Manifest},
+        prefix::InstallPrefix,
+    },
     errors::RustupError,
     toolchain::{CustomToolchainName, LocalToolchainName, Toolchain},
     utils,
@@ -14,9 +18,28 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) enum UpdateStatus {
-    Installed,
-    Updated(String), // Stores the version of rustc *before* the update
+    Installed {
+        /// The actual object ID of the installation behind the reference.
+        /// If this is an unofficial toolchain, this will be `None`.
+        obj: Option<OsString>,
+    },
+    Updated {
+        /// The version of rustc *before* the update.
+        from: String,
+        /// The actual object ID of the installation behind the reference.
+        /// If this is an unofficial toolchain, this will be `None`.
+        obj: Option<OsString>,
+    },
     Unchanged,
+}
+
+impl UpdateStatus {
+    pub(crate) fn into_obj(self) -> Option<OsString> {
+        match self {
+            Self::Installed { obj: Some(obj) } | Self::Updated { obj: Some(obj), .. } => Some(obj),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) enum InstallMethod<'cfg, 'a> {
@@ -33,7 +56,7 @@ impl InstallMethod<'_, '_> {
     #[tracing::instrument(level = "trace", err(level = "trace"), skip_all)]
     pub(crate) async fn install(
         self,
-        manifest: Option<ManifestWithHash>,
+        manifest: Option<Hashed<Manifest>>,
     ) -> anyhow::Result<UpdateStatus> {
         let cfg = match self {
             Self::Link { cfg, .. } | Self::Dist(DistOptions { cfg, .. }) => cfg,
@@ -65,30 +88,33 @@ impl InstallMethod<'_, '_> {
             }
         };
 
-        let toolchain_path = &cfg.toolchain_path(&toolchain);
-        debug!("toolchain directory: {}", toolchain_path.display());
-        if toolchain_path.exists() && !matches!(self, Self::Dist { .. }) {
-            uninstall(toolchain_path)?;
+        let ref_path = &cfg.ref_path(&toolchain);
+        debug!("toolchain directory: {}", ref_path.display());
+        if ref_path.exists() && !matches!(self, Self::Dist { .. }) {
+            uninstall(ref_path)?;
         }
 
         let status = match &self {
             Self::Link { src, .. } => {
-                utils::symlink_dir(src, toolchain_path)?;
-                UpdateStatus::Installed
+                utils::symlink_dir(src, ref_path)?;
+                UpdateStatus::Installed { obj: None }
             }
             Self::Dist(opts) => match opts
-                .install_into(&InstallPrefix::from(toolchain_path.clone()), manifest)
+                .install_into(&InstallPrefix::from(ref_path.clone()), manifest)
                 .await?
             {
                 None => UpdateStatus::Unchanged,
-                Some(hash) => {
+                Some(Hashed { inner: obj, hash }) => {
                     utils::write_file("update hash", &opts.update_hash, &hash)?;
                     match opts {
                         DistOptions {
                             old_date_version: Some((_, v)),
                             ..
-                        } => UpdateStatus::Updated(v.clone()),
-                        _ => UpdateStatus::Installed,
+                        } => UpdateStatus::Updated {
+                            obj,
+                            from: v.clone(),
+                        },
+                        _ => UpdateStatus::Installed { obj },
                     }
                 }
             },
