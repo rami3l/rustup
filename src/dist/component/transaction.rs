@@ -108,12 +108,15 @@ impl Transaction {
             .canonicalize()
             .map_or_else(|_| Cow::Borrowed(ref_dir), Cow::Owned);
         let tmp_ref = tmp_dir.join([OsStr::new(&tx_id), ref_name].join(OsStr::new("-")));
-        utils::symlink_dir(
-            &diff_paths(heap, &ref_dir)
-                .context("when calculating source of toolchain reference")?
-                .join(obj),
-            &tmp_ref,
-        )?;
+        let ref_src = diff_paths(heap, &ref_dir)
+            .context("when calculating source of toolchain reference")?
+            .join(obj);
+        cfg_select! {
+            unix => utils::symlink_dir(&ref_src, &tmp_ref),
+            windows => utils::symlink_dir_with_canonicalizer(&ref_src, &tmp_ref, |_| {
+                Ok(heap.canonicalize()?.join(obj))
+            }),
+        }?;
 
         Ok(Self {
             lock: Some(lock),
