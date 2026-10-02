@@ -245,10 +245,6 @@ impl Manifestation {
             download_cfg.permit_copy_rename,
         )?;
 
-        // If the previous installation was from a v1 manifest we need
-        // to uninstall it first.
-        tx = self.maybe_handle_v2_upgrade(&config, tx)?;
-
         // If there are no components installed, and we are recovering from
         // a partial installation, we can provide a more informative message.
         if !update.components_to_uninstall.is_empty() && self.installation.list()?.is_empty() {
@@ -482,12 +478,6 @@ impl Manifestation {
             dl_cfg.permit_copy_rename,
         )?;
 
-        // Uninstall components
-        let components = self.installation.list()?;
-        for component in components {
-            tx = component.uninstall(tx)?;
-        }
-
         // Install all the components in the installer
         let reader = utils::buffered(&installer_file)?;
         let temp_dir = dl_cfg.tmp_cx.new_directory()?;
@@ -508,29 +498,6 @@ impl Manifestation {
             inner: desc,
             hash: installer_hash,
         }))
-    }
-
-    // If the previous installation was from a v1 manifest, then it
-    // doesn't have a configuration or manifest-derived list of
-    // component/target pairs. Uninstall it using the installer's
-    // component list before upgrading.
-    fn maybe_handle_v2_upgrade(
-        &self,
-        config: &Option<Config>,
-        mut tx: Transaction,
-    ) -> anyhow::Result<Transaction> {
-        let installed_components = self.installation.list()?;
-        let looks_like_v1 = config.is_none() && !installed_components.is_empty();
-
-        if !looks_like_v1 {
-            return Ok(tx);
-        }
-
-        for component in installed_components {
-            tx = component.uninstall(tx)?;
-        }
-
-        Ok(tx)
     }
 }
 
