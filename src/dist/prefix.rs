@@ -49,7 +49,12 @@ impl<'a> InstallPrefixWithOrigin<'a> {
     ///
     /// When flipping the active partition, if the original prefix base name doesn't match the above
     /// format, we consider the current active partition to be `a`.
-    pub fn new(orig: Option<&'a InstallPrefix>, changes: &Changes<'_>, heap_dir: &Path) -> Self {
+    pub fn new(
+        full_update: bool,
+        orig: Option<&'a InstallPrefix>,
+        changes: &Changes<'_>,
+        heap_dir: &Path,
+    ) -> Self {
         let orig_obj = orig.map(|o| {
             o.path
                 .file_name()
@@ -57,10 +62,6 @@ impl<'a> InstallPrefixWithOrigin<'a> {
                 .to_string_lossy()
         });
 
-        // TODO: When real content addressing is implemented, a special scheme should be used for
-        // the address formats of toolchains on v1 manifests because the latter don't have the
-        // notion of component sets. Now we are always using A/B partitioning so this doesn't
-        // matter.
         let parts = orig_obj.as_deref().and_then(|o| o.rsplit_once('-'));
         let (name, partition) = match parts {
             Some((n, p)) => (n, if p == "a" { "b" } else { "a" }),
@@ -72,7 +73,7 @@ impl<'a> InstallPrefixWithOrigin<'a> {
             }
         };
         Self {
-            orig,
+            orig: if full_update { None } else { orig },
             dest: InstallPrefix::from(heap_dir.join([name, partition].join("-"))),
         }
     }

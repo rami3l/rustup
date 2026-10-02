@@ -238,7 +238,7 @@ impl Manifestation {
         let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
         let mut tx = Transaction::new(
             ref_,
-            InstallPrefixWithOrigin::new(orig.as_ref(), &changes, &heap_dir),
+            InstallPrefixWithOrigin::new(update.is_full, orig.as_ref(), &changes, &heap_dir),
             download_cfg.tmp_cx.clone(),
             &heap_dir,
             &download_cfg.process.obj_locker()?,
@@ -470,7 +470,12 @@ impl Manifestation {
         let orig = ref_.canonicalize().map(InstallPrefix::from).ok();
         let mut tx = Transaction::new(
             ref_,
-            InstallPrefixWithOrigin::new(orig.as_ref(), &Changes::empty(toolchain), &heap_dir),
+            InstallPrefixWithOrigin::new(
+                true,
+                orig.as_ref(),
+                &Changes::empty(toolchain),
+                &heap_dir,
+            ),
             dl_cfg.tmp_cx.clone(),
             &heap_dir,
             &dl_cfg.process.obj_locker()?,
@@ -616,6 +621,7 @@ impl<'a, F: Future<Output = anyhow::Result<(ComponentInstall, &'a str)>>> Stream
 
 #[derive(Debug, Default)]
 struct Update {
+    is_full: bool,
     components_to_uninstall: Vec<Component>,
     components_to_install: Vec<Component>,
     final_component_list: Vec<Component>,
@@ -712,9 +718,13 @@ impl Update {
         // To install are those on the final list but not already
         // installed.
         let old_manifest = manifestation.load_manifest()?;
-        let just_modifying_existing_install = old_manifest.as_ref() == Some(new_manifest);
+        result.is_full = old_manifest.as_ref() != Some(new_manifest);
 
-        if just_modifying_existing_install {
+        if result.is_full {
+            result
+                .components_to_install
+                .clone_from(&result.final_component_list);
+        } else {
             for existing_component in &starting_list {
                 if !result.final_component_list.contains(existing_component) {
                     result
@@ -739,11 +749,6 @@ impl Update {
                     }
                 }
             }
-        } else {
-            result.components_to_uninstall = starting_list;
-            result
-                .components_to_install
-                .clone_from(&result.final_component_list);
         }
 
         Ok(result)

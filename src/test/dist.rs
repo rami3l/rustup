@@ -81,6 +81,7 @@ impl DistContext {
         let tx = Transaction::new(
             ref_,
             InstallPrefixWithOrigin::new(
+                false,
                 orig.as_ref(),
                 &Changes::empty(&ChannelToolchainName::from_str(toolchain)?),
                 &heap_dir,
