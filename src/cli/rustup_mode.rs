@@ -47,7 +47,7 @@ use crate::{
     dist::{
         DistOptions, PartialChannelToolchainName, Profile, Switch, TargetTuple,
         download::DownloadCfg,
-        manifest::{Component, ManifestWithHash},
+        manifest::{Component, Hashed},
     },
     errors::{DEFAULT_STABLE_HINT, RustupError},
     install::{InstallMethod, UpdateStatus},
@@ -1046,9 +1046,7 @@ async fn check_updates(cfg: &Cfg<'_>, opts: CheckOpts) -> anyhow::Result<ExitCod
                 let _permit = sem.acquire().await.unwrap();
                 let current_version = distributable.show_version()?;
                 let dist_version = match distributable.fetch_dist_manifest().await? {
-                    Some(ManifestWithHash { manifest, .. }) => {
-                        Some(manifest.get_rust_version()?.to_string())
-                    }
+                    Some(Hashed { inner, .. }) => Some(inner.get_rust_version()?.to_string()),
                     None => None,
                 };
                 let mut update_a = false;
@@ -1157,7 +1155,8 @@ async fn update(
 
     let dl_cfg = DownloadCfg::new(cfg);
     let names = opts.toolchain;
-    if !names.is_empty() {
+    let gc_candidates = if !names.is_empty() {
+        let mut candidates = Vec::with_capacity(names.len());
         for name in names {
             // This needs another pass to fix it all up
             if !name.target.is_empty() {
@@ -1211,25 +1210,40 @@ async fn update(
             }
 
             if opts.default
-                || (cfg.get_default()?.is_none() && matches!(status, UpdateStatus::Installed))
+                || (cfg.get_default()?.is_none()
+                    && matches!(status, UpdateStatus::Installed { .. }))
             {
                 cfg.set_default(Some(&name.into()))?;
             }
+
+            candidates.extend(status.into_obj())
         }
         exit_code &= self_update_mode.update(should_self_update, &dl_cfg).await?;
+        Some(candidates)
     } else if ensure_active_toolchain {
         let (toolchain, source) = cfg.ensure_active_toolchain(force_non_host, true).await?;
         info!("the active toolchain `{}` has been installed", *toolchain);
         info!("it's active because: {}", source.to_reason());
         exit_code &= self_update_mode.update(should_self_update, &dl_cfg).await?;
+        Some(toolchain.status.into_obj().into_iter().collect())
     } else {
         exit_code &= common::update_all_channels(cfg, opts.force, opts.check).await?;
         exit_code &= self_update_mode.update(should_self_update, &dl_cfg).await?;
+        None
+    };
 
+    if gc_candidates.is_none() {
+        // TODO: Also unconditionally (take all objs/refs as candidates) GC the `heap/tmp`.
         info!("cleaning up downloads & tmp directories");
         utils::delete_dir_contents_following_links(&cfg.download_dir);
         dl_cfg.tmp_cx.clean();
     }
+    cfg.obj_locker()?.gc(
+        gc_candidates
+            .as_ref()
+            .map(|cs| cs.iter().map(|o| o.as_ref())),
+        cfg,
+    )?;
 
     Ok(exit_code)
 }
@@ -1515,24 +1529,25 @@ async fn target_add(
         ));
     }
 
-    if all {
+    let status = if all {
         distributable
             .add_components(distributable.components()?.into_iter().filter_map(|c| {
                 (c.available && !c.installed && c.component.short_name() == "rust-std")
                     .then_some(Ok(c.component))
             }))
-            .await?;
-
-        return Ok(ExitCode::SUCCESS);
+            .await
+    } else {
+        distributable
+            .add_components(
+                targets
+                    .into_iter()
+                    .map(|target| Ok(Component::std(TargetTuple::new(target)))),
+            )
+            .await
+    }?;
+    if let Some(obj) = status.into_obj() {
+        cfg.obj_locker()?.gc(Some([&*obj]), cfg)?;
     }
-
-    distributable
-        .add_components(
-            targets
-                .into_iter()
-                .map(|target| Ok(Component::std(TargetTuple::new(target)))),
-        )
-        .await?;
 
     Ok(ExitCode::SUCCESS)
 }
@@ -1560,9 +1575,13 @@ async fn target_remove(
         warn!("removing the last target; no build targets will be available");
     }
 
-    distributable
+    let status = distributable
         .remove_components(targets.into_iter().map(|c| Ok(Component::std(c))))
         .await?;
+    if let Some(obj) = status.into_obj() {
+        cfg.obj_locker()?.gc(Some([&*obj]), cfg)?;
+    }
+
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1613,13 +1632,16 @@ async fn component_add(
 
     let target = get_target(target, &distributable);
 
-    distributable
+    let status = distributable
         .add_components(
             components
                 .into_iter()
                 .map(|component| Component::try_new(&component, &distributable, target.as_ref())),
         )
         .await?;
+    if let Some(obj) = status.into_obj() {
+        cfg.obj_locker()?.gc(Some([&*obj]), cfg)?;
+    }
 
     Ok(ExitCode::SUCCESS)
 }
@@ -1640,13 +1662,17 @@ async fn component_remove(
     let distributable = ChannelToolchain::from_partial(toolchain, cfg).await?;
     let target = get_target(target, &distributable);
 
-    distributable
+    let status = distributable
         .remove_components(
             components
                 .iter()
                 .map(|component| Component::try_new(component, &distributable, target.as_ref())),
         )
         .await?;
+    if let Some(obj) = status.into_obj() {
+        cfg.obj_locker()?.gc(Some([&*obj]), cfg)?;
+    }
+
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1686,7 +1712,9 @@ async fn toolchain_remove(cfg: &Cfg<'_>, opts: UninstallOpts) -> anyhow::Result<
         .flatten()
         .map(|(it, _)| it);
 
-    for toolchain_name in opts.toolchain {
+    let toolchains = opts.toolchain;
+    let mut gc_candidates = Vec::with_capacity(toolchains.len());
+    for toolchain_name in toolchains {
         let toolchain_name = toolchain_name.complete(&cfg.default_host_tuple()?)?;
 
         if active_toolchain
@@ -1706,7 +1734,12 @@ async fn toolchain_remove(cfg: &Cfg<'_>, opts: UninstallOpts) -> anyhow::Result<
             );
         }
 
-        Toolchain::ensure_removed(cfg, toolchain_name.into())?;
+        gc_candidates.extend(Toolchain::ensure_removed(cfg, toolchain_name.into())?);
+    }
+
+    if !gc_candidates.is_empty() {
+        cfg.obj_locker()?
+            .gc(Some(gc_candidates.iter().map(|c| c.as_os_str())), cfg)?;
     }
     Ok(ExitCode::SUCCESS)
 }
