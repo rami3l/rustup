@@ -201,6 +201,22 @@ pub(crate) fn symlink_dir(src: &Path, dest: &Path) -> anyhow::Result<()> {
     })
 }
 
+#[cfg(windows)]
+pub(crate) fn symlink_dir_with_canonicalizer(
+    src: &Path,
+    dest: &Path,
+    canonicalizer: impl FnOnce(&Path) -> io::Result<PathBuf>,
+) -> anyhow::Result<()> {
+    debug!(source = %src.display(), destination = %dest.display(), "linking directory");
+    raw::symlink_dir_with_canonicalizer(src, dest, canonicalizer).with_context(|| {
+        format!(
+            "could not create link from '{}' to '{}'",
+            src.display(),
+            dest.display()
+        )
+    })
+}
+
 /// Attempts to symlink a file, falling back to hard linking if that fails.
 ///
 /// If `dest` already exists then it will be replaced.
