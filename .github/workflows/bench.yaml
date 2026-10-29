@@ -44,6 +44,10 @@ jobs:
           tool: gungraun-runner
 
       - name: Run and upload benchmarks
+        env:
+          RUSTUP_TEST_MOCK_BIN_DEBUG_INFO: "1"
+          # HACK: This stops gungraun from including the subprocess name in the benchmark header.
+          GUNGRAUN_TRUNCATE_DESCRIPTION: "0"
         run: |
           bencher run \
             --project "$BENCHER_PROJECT" \
