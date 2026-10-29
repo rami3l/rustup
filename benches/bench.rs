@@ -2,7 +2,9 @@
 
 use std::{cell::RefCell, collections::HashMap, ffi::OsString, fs};
 
-use gungraun::{BinaryBenchmarkConfig, Command, OutputFormat, Stdio, prelude::*};
+use gungraun::{
+    BinaryBenchmarkConfig, Callgrind, Command, FlamegraphConfig, OutputFormat, Stdio, prelude::*,
+};
 use rustup::test::{CliTestContext, Scenario};
 use tokio::runtime::Runtime;
 
@@ -45,7 +47,11 @@ binary_benchmark_group!(
     ]
 );
 
-main!(binary_benchmark_groups = proxy_startup);
+main!(
+    config = BinaryBenchmarkConfig::default()
+        .tool(Callgrind::default().flamegraph(FlamegraphConfig::default())),
+    binary_benchmark_groups = proxy_startup
+);
 
 // HACK: Works around the conflict between gungraun's test harness and rustup's test harness, which
 // both assume the ownership of the current working directory. Currently, we disable the former and
