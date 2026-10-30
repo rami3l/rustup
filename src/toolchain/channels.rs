@@ -17,8 +17,8 @@ use crate::{
     dist::{
         ChannelToolchainName, DistOptions, PartialChannelToolchainName,
         download::DownloadCfg,
-        manifest::{Component, ComponentStatus, Manifest, ManifestWithHash},
-        manifestation::{Changes, Manifestation},
+        manifest::{Component, ComponentStatus, Hashed, Manifest},
+        manifestation::{Changes, Manifestation, UpdateStatus},
         prefix::InstallPrefix,
     },
     errors::{ComponentSuggestion, TargetSuggestion, UnknownComponentInfo, component_suggestion},
@@ -61,7 +61,7 @@ impl<'a> ChannelToolchain<'a> {
     pub(crate) async fn add_components(
         &self,
         components: impl IntoIterator<Item = anyhow::Result<Component>>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<UpdateStatus> {
         let desc = self.desc();
         let manifestation = self.get_manifestation()?;
         let manifest = self.get_manifest()?;
@@ -132,16 +132,17 @@ impl<'a> ChannelToolchain<'a> {
         }
 
         let changes = Changes {
+            chan: desc,
             explicit_add_components: validated_components,
             remove_components: vec![],
         };
 
         let download_cfg = DownloadCfg::new(self.toolchain.cfg);
-        manifestation
+        let status = manifestation
             .update(manifest, changes, false, &download_cfg, desc, false)
             .await?;
 
-        Ok(())
+        Ok(status)
     }
 
     pub(crate) fn components(&self) -> anyhow::Result<Vec<ComponentStatus>> {
@@ -313,7 +314,7 @@ impl<'a> ChannelToolchain<'a> {
     pub(crate) async fn remove_components(
         &self,
         components: impl IntoIterator<Item = anyhow::Result<Component>>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<UpdateStatus> {
         let desc = self.desc();
         let manifestation = self.get_manifestation()?;
         let config = manifestation.read_config()?.unwrap_or_default();
@@ -377,12 +378,13 @@ impl<'a> ChannelToolchain<'a> {
         }
 
         let changes = Changes {
+            chan: desc,
             explicit_add_components: vec![],
             remove_components: renamed_components,
         };
 
         let download_cfg = DownloadCfg::new(self.toolchain.cfg);
-        manifestation
+        let status = manifestation
             .update(manifest, changes, false, &download_cfg, desc, false)
             .await?;
 
@@ -394,10 +396,10 @@ impl<'a> ChannelToolchain<'a> {
             .into());
         }
 
-        Ok(())
+        Ok(status)
     }
 
-    pub async fn fetch_dist_manifest(&self) -> anyhow::Result<Option<ManifestWithHash>> {
+    pub async fn fetch_dist_manifest(&self) -> anyhow::Result<Option<Hashed<Manifest>>> {
         let desc = self.desc();
         let prefix = InstallPrefix::from(self.toolchain.path());
         let update_hash = if prefix.dist_manifest().is_some() {
