@@ -1,10 +1,10 @@
 #[cfg(not(windows))]
 use std::env;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::{
-    fs,
-    fs::File,
-    io,
-    io::{Read, Seek, SeekFrom, Write},
+    fs::{self, File},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
     str,
 };
@@ -159,21 +159,29 @@ pub fn append_file(dest: &Path, line: &str) -> io::Result<()> {
 }
 
 pub fn symlink_dir(src: &Path, dest: &Path) -> io::Result<()> {
-    #[cfg(windows)]
-    fn symlink_dir_inner(src: &Path, dest: &Path) -> io::Result<()> {
-        // On Windows creating symlinks isn't allowed by default so if it fails
-        // we fallback to creating a directory junction.
-        // We prefer to use symlinks here because junction point paths, unlike symlinks,
-        // must always be absolute. This makes moving the rustup directory difficult.
-        std::os::windows::fs::symlink_dir(src, dest).or_else(|_| symlink_junction_inner(src, dest))
+    cfg_select! {
+        unix => {
+            let _ = remove_dir(dest);
+            std::os::unix::fs::symlink(src, dest)
+        }
+        windows => symlink_dir_with_canonicalizer(src, dest, Path::canonicalize),
     }
-    #[cfg(not(windows))]
-    fn symlink_dir_inner(src: &Path, dest: &Path) -> io::Result<()> {
-        std::os::unix::fs::symlink(src, dest)
-    }
+}
 
+#[cfg(windows)]
+pub fn symlink_dir_with_canonicalizer(
+    src: &Path,
+    dest: &Path,
+    canonicalizer: impl FnOnce(&Path) -> io::Result<PathBuf>,
+) -> io::Result<()> {
     let _ = remove_dir(dest);
-    symlink_dir_inner(src, dest)
+
+    // On Windows creating symlinks isn't allowed by default so if it fails
+    // we fallback to creating a directory junction.
+    // We prefer to use symlinks here because junction point paths, unlike symlinks,
+    // must always be absolute. This makes moving the rustup directory difficult.
+    std::os::windows::fs::symlink_dir(src, dest)
+        .or_else(|_| symlink_junction_inner(src, dest, canonicalizer))
 }
 
 // Creating a directory junction on windows involves dealing with reparse
@@ -185,7 +193,11 @@ pub fn symlink_dir(src: &Path, dest: &Path) -> io::Result<()> {
 // Copied from std
 #[cfg(windows)]
 #[allow(non_snake_case)]
-fn symlink_junction_inner(target: &Path, junction: &Path) -> io::Result<()> {
+fn symlink_junction_inner(
+    target: &Path,
+    junction: &Path,
+    canonicalizer: impl FnOnce(&Path) -> io::Result<PathBuf>,
+) -> io::Result<()> {
     use std::{os::windows::ffi::OsStrExt, ptr};
 
     use windows_sys::Win32::{
@@ -217,7 +229,7 @@ fn symlink_junction_inner(target: &Path, junction: &Path) -> io::Result<()> {
     // We're using low-level APIs to create the junction, and these are more picky about paths.
     // For example, forward slashes cannot be used as a path separator, so we should try to
     // canonicalize the path first.
-    let target = fs::canonicalize(target)?;
+    let target = canonicalizer(target)?;
 
     fs::create_dir(junction)?;
 
