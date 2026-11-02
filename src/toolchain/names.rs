@@ -575,7 +575,7 @@ pub trait ToolchainNameExt: Display {
 
     /// Provides the path to the toolchain's root directory.
     fn path(&self, cfg: &Cfg<'_>) -> PathBuf {
-        cfg.toolchains_dir.join(self.to_string())
+        cfg.refs_dir.join(self.to_string())
     }
 }
 
