@@ -18,7 +18,7 @@ use crate::{
     config::Cfg,
     dist::{
         Channel, ChannelToolchainName, DEFAULT_DIST_SERVER,
-        manifest::{Manifest, ManifestWithHash},
+        manifest::{Hashed, Manifest},
         temp,
     },
     download::{DownloadOptions, should_keep_partial},
@@ -213,7 +213,7 @@ impl<'a> DownloadCfg<'a> {
         update_hash: Option<&Path>,
         toolchain: &ChannelToolchainName,
         cfg: &Cfg<'_>,
-    ) -> anyhow::Result<Option<ManifestWithHash>> {
+    ) -> anyhow::Result<Option<Hashed<Manifest>>> {
         let manifest_url = toolchain.manifest_v2_url(&cfg.dist_root_url, self.process);
         match self
             .download_and_check(&manifest_url, update_hash, None, ".toml")
@@ -231,7 +231,10 @@ impl<'a> DownloadCfg<'a> {
                         path: manifest_file.to_path_buf(),
                     })?;
 
-                Ok(Some(ManifestWithHash { manifest, hash }))
+                Ok(Some(Hashed {
+                    inner: manifest,
+                    hash,
+                }))
             }
             Err(err) => {
                 if let Some(RustupError::ChecksumFailed { .. }) = err.downcast_ref::<RustupError>()
