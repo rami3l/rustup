@@ -6,17 +6,14 @@ use clap_complete::{ArgValueCandidates, engine::CompletionCandidate};
 use crate::{
     cli::rustup_mode::Rustup,
     config::Cfg,
-    toolchain::{
-        ChannelToolchain, Override, PartialToolchainName, PartialToolchainNameOrPath,
-        ToolchainName, ToolchainNameOrPath,
-    },
+    toolchain::{ChannelToolchain, Override, PartialToolchainNameOrPath, Toolchain},
 };
 
 pub(super) fn rustup_command(cfg: &Cfg<'_>, args: &[OsString]) -> clap::Command {
     let mut toolchains = cfg.list_toolchains(true).unwrap_or_default();
     toolchains.sort();
 
-    let channel_toolchain = targeted_channel_toolchain(cfg, args, &toolchains);
+    let channel_toolchain = active_channel_toolchain(cfg, args).ok().flatten();
 
     let available_targets = channel_toolchain
         .as_ref()
@@ -78,48 +75,23 @@ pub(super) fn rustup_command(cfg: &Cfg<'_>, args: &[OsString]) -> clap::Command 
         })
 }
 
-fn targeted_channel_toolchain<'a>(
+fn active_channel_toolchain<'a>(
     cfg: &'a Cfg<'a>,
     args: &[OsString],
-    toolchains: &[ToolchainName],
-) -> Option<ChannelToolchain<'a>> {
-    match extract_toolchain_override(args) {
-        Some(override_desc) => match override_desc.resolve(cfg).ok() {
-            Some(PartialToolchainNameOrPath::Named(PartialToolchainName::Channel(desc))) => {
-                let host = cfg.default_host_tuple().ok();
-                let channel_name = host.and_then(|h| desc.complete(&h).ok());
-                channel_name.and_then(|name| ChannelToolchain::new(cfg, name).ok())
-            }
-            _ => None,
-        },
-        None => match cfg.active_toolchain().ok().flatten() {
-            Some((ToolchainNameOrPath::Named(ToolchainName::Channel(desc)), _)) => {
-                ChannelToolchain::new(cfg, desc).ok()
-            }
-            _ => toolchains.iter().find_map(|name| {
-                let ToolchainName::Channel(desc) = name else {
-                    return None;
-                };
-                ChannelToolchain::new(cfg, desc.clone()).ok()
-            }),
-        },
-    }
-}
-
-fn extract_toolchain_override(args: &[OsString]) -> Option<Override<PartialToolchainNameOrPath>> {
-    let cmd_args = match args.iter().position(|a| a == "--") {
-        Some(pos) => &args[pos + 1..],
-        None => args,
-    };
-
-    Rustup::command()
+) -> anyhow::Result<Option<ChannelToolchain<'a>>> {
+    let toolchain_override = Rustup::command()
         .ignore_errors(true)
-        .try_get_matches_from(cmd_args)
+        .try_get_matches_from(args)
         .ok()
         .and_then(|m| {
             m.get_one::<Override<PartialToolchainNameOrPath>>("+toolchain")
                 .cloned()
-        })
+        });
+
+    let Some((tc, _)) = cfg.active_toolchain(toolchain_override.as_ref())? else {
+        return Ok(None);
+    };
+    Ok(Some(ChannelToolchain::try_from(Toolchain::new(cfg, tc)?)?))
 }
 
 #[cfg(all(test, feature = "test"))]
@@ -131,7 +103,10 @@ mod tests {
     };
 
     use super::rustup_command;
-    use crate::{config::Cfg, process::TestProcess};
+    use crate::{
+        config::Cfg,
+        process::{Process, TestProcess},
+    };
 
     fn complete(cfg: &Cfg<'_>, args: &[&str], index: usize) -> Vec<String> {
         let raw_args: Vec<OsString> = args.iter().map(OsString::from).collect();
@@ -256,6 +231,7 @@ mod tests {
         .unwrap();
 
         let cfg = Cfg::from_env(rustup_home.path().to_owned(), true, false, &process).unwrap();
+        cfg.set_default(Some(&TOOLCHAIN.parse().unwrap())).unwrap();
 
         let candidates = complete(&cfg, &["rustup", "target", "add", ""], 3);
 
@@ -284,24 +260,8 @@ mod tests {
 
     #[test]
     fn dynamic_completion_target_remove_with_custom_toolchain_from_env_offers_no_targets() {
-        let rustup_home = tempfile::tempdir().unwrap();
+        let (rustup_home, process) = completion_cfg_with_env(&[("RUSTUP_TOOLCHAIN", "stage1")]);
         fs::create_dir_all(rustup_home.path().join("toolchains/stage1")).unwrap();
-        let vars = HashMap::from([
-            (
-                "RUSTUP_HOME".to_owned(),
-                rustup_home.path().display().to_string(),
-            ),
-            (
-                "RUSTUP_OVERRIDE_UNIX_FALLBACK_SETTINGS".to_owned(),
-                rustup_home
-                    .path()
-                    .join("missing-settings.toml")
-                    .display()
-                    .to_string(),
-            ),
-            ("RUSTUP_TOOLCHAIN".to_owned(), "stage1".to_owned()),
-        ]);
-        let process = TestProcess::new(rustup_home.path(), &["rustup"], vars, "").process;
         let cfg = Cfg::from_env(rustup_home.path().to_owned(), true, false, &process).unwrap();
 
         let candidates = complete(&cfg, &["rustup", "target", "remove", ""], 3);
@@ -380,9 +340,13 @@ mod tests {
     /// Creates a bare rustup home with no toolchains installed.
     /// Used by completion tests to verify the completer is robust
     /// and to set up a base environment for further customisation.
-    fn completion_cfg() -> (tempfile::TempDir, crate::process::Process) {
+    fn completion_cfg() -> (tempfile::TempDir, Process) {
+        completion_cfg_with_env(&[])
+    }
+
+    fn completion_cfg_with_env(extra_env: &[(&str, &str)]) -> (tempfile::TempDir, Process) {
         let rustup_home = tempfile::tempdir().unwrap();
-        let vars = HashMap::from([
+        let mut vars = HashMap::from([
             (
                 "RUSTUP_HOME".to_owned(),
                 rustup_home.path().display().to_string(),
@@ -396,6 +360,11 @@ mod tests {
                     .to_string(),
             ),
         ]);
+        vars.extend(
+            extra_env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string())),
+        );
         let process = TestProcess::new(rustup_home.path(), &["rustup"], vars, "").process;
         (rustup_home, process)
     }
