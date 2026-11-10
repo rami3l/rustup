@@ -26,7 +26,7 @@ async fn interrupted_install_can_be_retried() {
 }
 
 #[tokio::test]
-async fn interrupted_install_cannot_be_cleaned_up() {
+async fn interrupted_install_can_be_cleaned_up() {
     let cx = CliTestContext::new(Scenario::SimpleV2).await;
     cx.kill_at(
         CHECKPOINT_UPDATE_BEFORE_METADATA,
@@ -47,7 +47,7 @@ warn: no toolchain installed and no default toolchain set
 ...
 "#]])
         .is_ok();
-    assert_eq!(tmp.read_dir().unwrap().count(), 1);
+    assert_eq!(tmp.read_dir().unwrap().count(), 0);
 }
 
 /// Two processes installing the same toolchain shouldn't race against each other.

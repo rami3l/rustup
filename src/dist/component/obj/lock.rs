@@ -8,7 +8,6 @@ use std::{
 };
 
 use anyhow::bail;
-use itertools::Either;
 use tracing::debug;
 use twox_hash::XxHash32;
 
@@ -44,11 +43,19 @@ impl ObjLocker {
         }
     }
 
-    /// Garbage collects all objects in the collection `candidates`.
+    /// Performs the garbage collection of heap objects and in-flight objects/references.
     ///
-    /// Each candidate is identified with the object ID which points to a named directory in the heap.
-    /// When a candidate is found to be unreachable via any of the existing references, it will be
-    /// cleaned up. If `candidates` is `None`, then it defaults to all existing objects.
+    /// Garbage collects all heap objects related to the names in `candidates` and removes all
+    /// in-flight objects and references left behind by interrupted transactions.
+    ///
+    /// For the GC of heap objects, if `candidates` is `Some(_)`, then only the objects
+    /// corresponding to the names in `candidates` will be considered. Each candidate is essentially
+    /// an object address which points to a named directory in `heap/`. When a candidate is found to
+    /// be unreachable via any of the existing references, it will be cleaned up. If `candidates` is
+    /// `None`, then all existing heap objects will be considered.
+    ///
+    /// For the GC of in-flight objects and references, they are located under `heap/tmp/`, in a
+    /// directory named after the corresponding object's address.
     pub(crate) fn gc<'a>(
         &self,
         candidates: Option<impl IntoIterator<Item = &'a OsStr>>,
@@ -60,28 +67,59 @@ impl ObjLocker {
         }
 
         let heap = &cfg.toolchains_dir;
-        let mut locks = match candidates {
-            Some(candidates) => Either::Left(candidates.into_iter().map(Cow::Borrowed)),
-            None => match maybe_read_dir("toolchain objects", heap)? {
-                Some(dir) => Either::Right(dir.filter_map(|e| {
-                    let e = e.ok()?;
-                    if !e.file_type().is_ok_and(|t| t.is_dir()) {
-                        return None;
-                    }
-                    match e.file_name() {
-                        f if f == "tmp" => None,
-                        f => Some(Cow::Owned(f)),
-                    }
-                })),
-                None => return Ok(()),
-            },
+        let tmp = &heap.join("tmp");
+
+        let mut locks = HashMap::new();
+        if let Some(candidates) = candidates {
+            for c in candidates {
+                let Some(lock) = self.lock(c)? else {
+                    continue;
+                };
+                locks.insert(Cow::Borrowed(c), lock);
+            }
+        } else if let Some(dir) = maybe_read_dir("toolchain objects", heap)? {
+            for e in dir {
+                let Ok(e) = e else {
+                    continue;
+                };
+                if !e.file_type().is_ok_and(|t| t.is_dir()) {
+                    continue;
+                }
+                let f = e.file_name();
+                if f == "tmp" {
+                    continue;
+                }
+                let Some(lock) = self.lock(&f)? else {
+                    continue;
+                };
+                locks.insert(Cow::Owned(f), lock);
+            }
+        };
+
+        if let Some(dir) = maybe_read_dir("in-flight toolchain objects/references", tmp)? {
+            for e in dir {
+                let Ok(e) = e else {
+                    continue;
+                };
+                if !e.file_type().is_ok_and(|t| !t.is_file()) {
+                    continue;
+                }
+                let obj = e.file_name();
+
+                let maybe_lock = match locks.contains_key(&*obj) {
+                    // If the object is already locked for heap GC, there's no need to lock it again.
+                    true => None,
+                    false if let Some(lock) = self.lock(&obj)? => Some(lock),
+                    false => continue,
+                };
+                debug!(
+                    "toolchain address `{}` has stale in-flight objects/references, removing...",
+                    obj.display(),
+                );
+                utils::remove_dir("in-flight object/reference", &tmp.join(obj))?;
+                drop(maybe_lock);
+            }
         }
-        .filter_map(|c| match self.lock(&*c) {
-            Ok(Some(lock)) => Some(Ok((c, lock))),
-            Ok(None) => None,
-            Err(e) => Some(Err(e)),
-        })
-        .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
         let mut reachable = HashSet::new();
         if let Some(dir) = maybe_read_dir("toolchain references", &cfg.refs_dir)? {
