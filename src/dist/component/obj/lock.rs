@@ -62,14 +62,8 @@ impl ObjLocker {
         let heap = &cfg.toolchains_dir;
         let mut locks = match candidates {
             Some(candidates) => Either::Left(candidates.into_iter().map(Cow::Borrowed)),
-            None => match utils::read_dir("toolchain objects", heap) {
-                Err(e) => {
-                    return match e.downcast_ref::<io::Error>() {
-                        Some(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-                        _ => Err(e),
-                    };
-                }
-                Ok(dir) => Either::Right(dir.filter_map(|e| {
+            None => match maybe_read_dir("toolchain objects", heap)? {
+                Some(dir) => Either::Right(dir.filter_map(|e| {
                     let e = e.ok()?;
                     if !e.file_type().is_ok_and(|t| t.is_dir()) {
                         return None;
@@ -79,6 +73,7 @@ impl ObjLocker {
                         f => Some(Cow::Owned(f)),
                     }
                 })),
+                None => return Ok(()),
             },
         }
         .filter_map(|c| match self.lock(&*c) {
@@ -89,12 +84,13 @@ impl ObjLocker {
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
         let mut reachable = HashSet::new();
-        let walker = cfg.refs_dir.read_dir()?;
-        for entry in walker {
-            if let Ok(target) = fs::read_link(entry?.path())
-                && let Some(obj) = target.file_name()
-            {
-                reachable.insert(obj.to_owned());
+        if let Some(dir) = maybe_read_dir("toolchain references", &cfg.refs_dir)? {
+            for entry in dir {
+                if let Ok(target) = fs::read_link(entry?.path())
+                    && let Some(obj) = target.file_name()
+                {
+                    reachable.insert(obj.to_owned());
+                }
             }
         }
 
@@ -115,6 +111,16 @@ impl ObjLocker {
             drop(lock);
         }
         Ok(())
+    }
+}
+
+fn maybe_read_dir(name: &'static str, path: &Path) -> anyhow::Result<Option<fs::ReadDir>> {
+    match utils::read_dir(name, path) {
+        Ok(dir) => Ok(Some(dir)),
+        Err(e) => match e.downcast_ref::<io::Error>() {
+            Some(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            _ => Err(e),
+        },
     }
 }
 

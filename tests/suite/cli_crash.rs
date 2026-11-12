@@ -25,6 +25,31 @@ async fn interrupted_install_can_be_retried() {
         .is_ok();
 }
 
+#[tokio::test]
+async fn interrupted_install_cannot_be_cleaned_up() {
+    let cx = CliTestContext::new(Scenario::SimpleV2).await;
+    cx.kill_at(
+        CHECKPOINT_UPDATE_BEFORE_METADATA,
+        ["rustup", "toolchain", "install", "nightly"],
+    )
+    .is_err();
+
+    let tmp = &cx.config.rustupdir.join("heap/tmp");
+    assert_eq!(tmp.read_dir().unwrap().count(), 1);
+
+    cx.config
+        .expect(["rustup", "update"])
+        .await
+        .with_stderr(snapbox::str![[r#"
+info: no updatable toolchains installed
+info: cleaning up downloads & tmp directories
+warn: no toolchain installed and no default toolchain set
+...
+"#]])
+        .is_ok();
+    assert_eq!(tmp.read_dir().unwrap().count(), 1);
+}
+
 /// Two processes installing the same toolchain shouldn't race against each other.
 ///
 /// See: <https://github.com/rust-lang/rustup/issues/4607>
