@@ -18,7 +18,7 @@ use crate::{
     config::Cfg,
     dist::{
         Channel, ChannelToolchainName, DEFAULT_DIST_SERVER,
-        manifest::{Manifest, ManifestWithHash},
+        manifest::{Hashed, Manifest},
         temp,
     },
     download::{DownloadOptions, should_keep_partial},
@@ -152,6 +152,8 @@ impl<'a> DownloadCfg<'a> {
             }
         } else {
             debug!(url = url.as_ref(), "checksum passed");
+            #[cfg(feature = "test")]
+            self.process.checkpoint(CHECKPOINT_DOWNLOAD_BEFORE_RENAME);
             utils::rename(
                 "downloaded",
                 &partial_file_path,
@@ -213,7 +215,7 @@ impl<'a> DownloadCfg<'a> {
         update_hash: Option<&Path>,
         toolchain: &ChannelToolchainName,
         cfg: &Cfg<'_>,
-    ) -> anyhow::Result<Option<ManifestWithHash>> {
+    ) -> anyhow::Result<Option<Hashed<Manifest>>> {
         let manifest_url = toolchain.manifest_v2_url(&cfg.dist_root_url, self.process);
         match self
             .download_and_check(&manifest_url, update_hash, None, ".toml")
@@ -231,7 +233,10 @@ impl<'a> DownloadCfg<'a> {
                         path: manifest_file.to_path_buf(),
                     })?;
 
-                Ok(Some(ManifestWithHash { manifest, hash }))
+                Ok(Some(Hashed {
+                    inner: manifest,
+                    hash,
+                }))
             }
             Err(err) => {
                 if let Some(RustupError::ChecksumFailed { .. }) = err.downcast_ref::<RustupError>()
@@ -543,3 +548,6 @@ impl ops::Deref for File {
         self.path.as_path()
     }
 }
+
+#[cfg(feature = "test")]
+pub const CHECKPOINT_DOWNLOAD_BEFORE_RENAME: &str = "download-before-rename";
