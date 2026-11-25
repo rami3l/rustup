@@ -28,6 +28,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 #[cfg(feature = "test")]
 use tracing_subscriber::{EnvFilter, Registry, reload::Handle};
 
+use crate::dist::component::ObjLocker;
 #[cfg(feature = "test")]
 use crate::{
     cli::log,
@@ -258,6 +259,10 @@ impl Process {
     pub fn concurrent_downloads(&self) -> Option<usize> {
         let s = self.var("RUSTUP_CONCURRENT_DOWNLOADS").ok()?;
         Some(NonZero::from_str(&s).ok()?.get())
+    }
+
+    pub fn obj_locker(&self) -> anyhow::Result<ObjLocker> {
+        ObjLocker::new(&self.rustup_home()?.join("locks"))
     }
 
     /// Registers a testing checkpoint with the given name and parks the current thread.

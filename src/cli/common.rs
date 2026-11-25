@@ -14,6 +14,7 @@ use anyhow::{Context, anyhow};
 use clap_cargo::style::{CONTEXT, ERROR, UPDATE_ADDED, UPDATE_UNCHANGED, UPDATE_UPGRADED};
 use futures_util::future::join_all;
 use git_testament::{git_testament, render_testament};
+use same_file::is_same_file;
 use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, Registry, reload::Handle};
@@ -165,8 +166,8 @@ async fn show_channel_updates(
 ) -> anyhow::Result<()> {
     let data = tokio_stream::iter(updates).then(|(pkg, result)| async {
         let (banner, style) = match &result {
-            Ok(UpdateStatus::Installed) => ("installed", UPDATE_ADDED),
-            Ok(UpdateStatus::Updated(_)) => ("updated", UPDATE_UPGRADED),
+            Ok(UpdateStatus::Installed { .. }) => ("installed", UPDATE_ADDED),
+            Ok(UpdateStatus::Updated { .. }) => ("updated", UPDATE_UPGRADED),
             Ok(UpdateStatus::Unchanged) => ("unchanged", UPDATE_UNCHANGED),
             Err(_) => ("update failed", ERROR),
         };
@@ -174,14 +175,16 @@ async fn show_channel_updates(
         let (previous_version, version) = match &pkg {
             PackageUpdate::Rustup => {
                 let previous_version = match result {
-                    Ok(UpdateStatus::Installed) | Ok(UpdateStatus::Unchanged) | Err(_) => None,
+                    Ok(UpdateStatus::Installed { .. }) | Ok(UpdateStatus::Unchanged) | Err(_) => {
+                        None
+                    }
                     _ => Some(env!("CARGO_PKG_VERSION").into()),
                 };
                 let version = match result {
-                    Err(_) | Ok(UpdateStatus::Installed) | Ok(UpdateStatus::Unchanged) => {
+                    Err(_) | Ok(UpdateStatus::Installed { .. }) | Ok(UpdateStatus::Unchanged) => {
                         env!("CARGO_PKG_VERSION").into()
                     }
-                    Ok(UpdateStatus::Updated(v)) => v,
+                    Ok(UpdateStatus::Updated { from: v, .. }) => v,
                 };
                 (previous_version, version)
             }
@@ -194,8 +197,10 @@ async fn show_channel_updates(
                     Err(_) => String::from("(toolchain not installed)"),
                 };
                 let previous_version = match result {
-                    Ok(UpdateStatus::Installed) | Ok(UpdateStatus::Unchanged) | Err(_) => None,
-                    Ok(UpdateStatus::Updated(v)) => Some(v),
+                    Ok(UpdateStatus::Installed { .. }) | Ok(UpdateStatus::Unchanged) | Err(_) => {
+                        None
+                    }
+                    Ok(UpdateStatus::Updated { from: v, .. }) => Some(v),
                 };
                 (previous_version, version)
             }
@@ -268,7 +273,9 @@ pub(crate) async fn update_all_channels(
         };
 
         match &result {
-            Ok(UpdateStatus::Updated(_)) | Ok(UpdateStatus::Installed) => has_update = true,
+            Ok(UpdateStatus::Updated { .. }) | Ok(UpdateStatus::Installed { .. }) => {
+                has_update = true
+            }
             Err(e) => {
                 has_update_error = true;
                 report_error(e, cfg.process);
@@ -383,16 +390,21 @@ pub(crate) async fn list_toolchains(
             (false, false) => "",
         };
 
-        let toolchain_path = cfg.toolchains_dir.join(toolchain);
+        let toolchain_path = cfg.refs_dir.join(toolchain);
         let toolchain_meta = fs::symlink_metadata(&toolchain_path)?;
-        let toolchain_path = if verbose {
-            if toolchain_meta.is_dir() {
-                format!(" {}", toolchain_path.display())
-            } else {
-                format!(" {}", fs::read_link(toolchain_path)?.display())
+        let toolchain_path = match (verbose, toolchain_meta.is_dir()) {
+            (false, _) => String::new(),
+            (true, true) => format!(" {}", toolchain_path.display()),
+            (true, false) => {
+                let target = fs::read_link(&toolchain_path)?;
+                let is_from_heap = target.parent().is_some_and(|parent| {
+                    is_same_file(cfg.refs_dir.join(parent), &cfg.toolchains_dir).unwrap_or(false)
+                });
+                format!(
+                    " {}",
+                    if is_from_heap { toolchain_path } else { target }.display(),
+                )
             }
-        } else {
-            String::new()
         };
 
         writeln!(
